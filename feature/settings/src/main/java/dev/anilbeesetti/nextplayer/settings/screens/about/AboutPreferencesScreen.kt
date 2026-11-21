@@ -68,11 +68,8 @@ import dev.anilbeesetti.nextplayer.core.ui.components.tvListFocus
 import dev.anilbeesetti.nextplayer.core.ui.designsystem.NextIcons
 import kotlinx.coroutines.launch
 
-private const val GITHUB_URL = "https://github.com/anilbeesetti/nextplayer"
-private const val GITHUB_SPONSORS_URL = "https://github.com/sponsors/anilbeesetti"
-private const val KOFI_URL = "https://ko-fi.com/anilbeesetti"
-private const val PAYPAL_URL = "https://paypal.me/AnilBeesetti"
-private const val UPI_ID = "anilbeesetti10@oksbi"
+private const val GITHUB_URL = "https://github.com/t4ulquiorra/Miku"
+private const val GITHUB_SPONSORS_URL = "https://github.com/sponsors/t4ulquiorra"
 
 @Composable
 fun AboutPreferencesScreen(viewModel: AboutPreferencesViewModel) {
@@ -158,53 +155,14 @@ private fun AboutPreferencesScreenContent(
                     isFirstItem = true,
                 )
                 ClickablePreferenceItem(
-                    title = stringResource(R.string.kofi),
-                    description = stringResource(
-                        R.string.support_the_developer_on,
-                        stringResource(R.string.kofi),
-                    ),
-                    icon = ImageVector.vectorResource(R.drawable.ic_kofi),
+                    title = stringResource(R.string.github),
+                    description = "https://github.com/t4ulquiorra/Miku",
+                    icon = ImageVector.vectorResource(R.drawable.ic_github),
                     onClick = {
                         uriHandler.openUriOrShowToast(
-                            uri = KOFI_URL,
+                            uri = GITHUB_URL,
                             context = context,
                         )
-                    },
-                )
-                ClickablePreferenceItem(
-                    title = stringResource(R.string.paypal),
-                    description = stringResource(
-                        R.string.support_the_developer_on,
-                        stringResource(R.string.paypal),
-                    ),
-                    icon = ImageVector.vectorResource(R.drawable.ic_paypal),
-                    onClick = {
-                        uriHandler.openUriOrShowToast(
-                            uri = PAYPAL_URL,
-                            context = context,
-                        )
-                    },
-                )
-                ClickablePreferenceItem(
-                    title = stringResource(R.string.upi),
-                    description = UPI_ID,
-                    icon = ImageVector.vectorResource(R.drawable.ic_upi),
-                    onClick = {
-                        scope.launch {
-                            clipboard.setClipEntry(
-                                clipEntry = ClipEntry(
-                                    ClipData.newPlainText(
-                                        "text",
-                                        UPI_ID,
-                                    ),
-                                ),
-                            )
-                            Toast.makeText(
-                                context,
-                                "copied to clipboard",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
                     },
                     isLastItem = true,
                 )
