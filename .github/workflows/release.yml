@@ -65,12 +65,8 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "::notice title=Keystore::Configuring release keystore from GitHub Secrets."
             echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
-            cat << EOF > signing.properties
-storeFile=release.keystore
-storePassword=$KEYSTORE_PASSWORD
-keyAlias=$KEY_ALIAS
-keyPassword=$KEY_PASSWORD
-EOF
+            printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > signing.properties
           else
             echo "::warning title=Keystore::KEYSTORE_BASE64 secret not found. Falling back to debug signing."
           fi
