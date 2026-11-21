@@ -18,7 +18,36 @@ build/
 **/build/
 *.apk
 *.aab
+output.json
+captures/
+.externalNativeBuild/
 .cxx/
+*.log
+*.hprof
+
+# IDE & OS files
 .idea/
 *.iml
+misc.xml
+deploymentTargetDropDown.xml
+render.experimental.xml
 .DS_Store
+
+# Google Services (if any)
+google-services.json
+
+# Fastlane & Bundler
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+vendor/
+.bundle/
+
+# Tooling / Temp
+.kotlin
+.junie
+docs/*
+!docs/agents/
+.superpowers
+.koda
