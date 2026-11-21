@@ -1,34 +1,41 @@
 package dev.anilbeesetti.nextplayer.core.ui.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
+import dev.anilbeesetti.nextplayer.core.ui.R
 
-// Set of Material typography styles to start with
+// Bundled fonts from prototype.html
+val BricolageGrotesque = FontFamily(
+    Font(R.font.bricolage_grotesque_regular, FontWeight.Normal),
+    Font(R.font.bricolage_grotesque_medium, FontWeight.Medium),
+    Font(R.font.bricolage_grotesque_bold, FontWeight.Bold),
+)
+
+val JetBrainsMono = FontFamily(
+    Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
+    Font(R.font.jetbrains_mono_medium, FontWeight.Medium),
+    Font(R.font.jetbrains_mono_bold, FontWeight.Bold),
+)
+
+private val defaultTypography = Typography()
+
+// Whole app uses Bricolage Grotesque across all Material3 typography styles
 val Typography = Typography(
-    bodyLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.5.sp,
-    ),
-    /* Other default text styles to override
-    titleLarge = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp
-    ),
-    labelSmall = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
-    )
-     */
+    displayLarge = defaultTypography.displayLarge.copy(fontFamily = BricolageGrotesque),
+    displayMedium = defaultTypography.displayMedium.copy(fontFamily = BricolageGrotesque),
+    displaySmall = defaultTypography.displaySmall.copy(fontFamily = BricolageGrotesque),
+    headlineLarge = defaultTypography.headlineLarge.copy(fontFamily = BricolageGrotesque),
+    headlineMedium = defaultTypography.headlineMedium.copy(fontFamily = BricolageGrotesque),
+    headlineSmall = defaultTypography.headlineSmall.copy(fontFamily = BricolageGrotesque),
+    titleLarge = defaultTypography.titleLarge.copy(fontFamily = BricolageGrotesque),
+    titleMedium = defaultTypography.titleMedium.copy(fontFamily = BricolageGrotesque),
+    titleSmall = defaultTypography.titleSmall.copy(fontFamily = BricolageGrotesque),
+    bodyLarge = defaultTypography.bodyLarge.copy(fontFamily = BricolageGrotesque),
+    bodyMedium = defaultTypography.bodyMedium.copy(fontFamily = BricolageGrotesque),
+    bodySmall = defaultTypography.bodySmall.copy(fontFamily = BricolageGrotesque),
+    labelLarge = defaultTypography.labelLarge.copy(fontFamily = BricolageGrotesque),
+    labelMedium = defaultTypography.labelMedium.copy(fontFamily = BricolageGrotesque),
+    labelSmall = defaultTypography.labelSmall.copy(fontFamily = BricolageGrotesque),
 )
