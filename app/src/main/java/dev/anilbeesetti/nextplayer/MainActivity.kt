@@ -7,13 +7,17 @@ import android.os.Bundle
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -24,13 +28,13 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -46,10 +50,9 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
@@ -59,7 +62,6 @@ import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
-import androidx.window.core.layout.WindowSizeClass
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import dev.anilbeesetti.nextplayer.core.common.extensions.isTelevision
 import dev.anilbeesetti.nextplayer.core.common.service.system.SystemService
@@ -70,8 +72,8 @@ import dev.anilbeesetti.nextplayer.core.ui.components.LocalTopLevelBottomBarVisi
 import dev.anilbeesetti.nextplayer.core.ui.components.LocalTopLevelFabSetter
 import dev.anilbeesetti.nextplayer.core.ui.components.TopLevelFabState
 import dev.anilbeesetti.nextplayer.core.ui.components.thenIf
+import dev.anilbeesetti.nextplayer.core.ui.components.tvFocusRing
 import dev.anilbeesetti.nextplayer.core.ui.theme.NextPlayerTheme
-import dev.anilbeesetti.nextplayer.navigation.NextNavigationBar
 import dev.anilbeesetti.nextplayer.navigation.NextNavigationRail
 import dev.anilbeesetti.nextplayer.navigation.TopLevelDestination
 import dev.anilbeesetti.nextplayer.navigation.TopLevelNavState
@@ -226,8 +228,7 @@ class MainActivity : FragmentActivity() {
                             }
                         }
                         CompositionLocalProvider(
-                            LocalNavigationBottomPadding provides
-                                layoutPaddingValues.calculateBottomPadding(),
+                            LocalNavigationBottomPadding provides 0.dp,
                             LocalTopLevelBottomBarVisibleSetter provides
                                 { showTopLevelBottomBar = it },
                             LocalTopLevelFabSetter provides { key, state ->
@@ -278,20 +279,16 @@ fun NavigationLayout(
     state: TopLevelNavState,
     fabStates: SnapshotStateMap<String, TopLevelFabState>,
     showBottomBar: Boolean,
-    windowSizeClass: WindowSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val isTv = LocalContext.current.isTelevision
-    val density = LocalDensity.current
-    var railWidth by remember(density) { mutableStateOf(0.dp) }
     val contentFocusRequester = remember { FocusRequester() }
     val fabFocusRequester = remember { FocusRequester() }
-    val showNavRail = windowSizeClass.isWidthAtLeastBreakpoint(
-        WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND,
-    )
     val showNavigation =
         state.currentStack.lastOrNull()?.let { state.topLevelContentKeys.contains(element = it) } ==
             true
+    val railVisible = showNavigation && showBottomBar
+    val railWidth = 96.dp
     val selectedFabState = state.destinations[state.selectedIndex].fabKey?.let(
         block = fabStates::get,
     )
@@ -299,67 +296,112 @@ fun NavigationLayout(
     LaunchedEffect(key1 = selectedFabState) { selectedFabState?.let { displayedFabState = it } }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            modifier = modifier,
-            bottomBar = {
-                AnimatedVisibility(
-                    visible = showNavigation && showBottomBar,
-                    enter = fadeIn() + slideInVertically { it },
-                    exit = fadeOut() + slideOutVertically { it },
-                ) {
-                    NextNavigationBar(
-                        state = state,
-                        fabState = displayedFabState,
-                        contentFocusRequester = contentFocusRequester,
-                        fabFocusRequester = fabFocusRequester,
-                        showFabOnly = showNavRail,
-                    )
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            contentWindowInsets = WindowInsets(0.dp),
-            content = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .thenIf(condition = isTv) {
-                            // The FAB sits outside screen content, whose full-height focus groups
-                            // overlap it. Enter the content explicitly instead of searching the rail.
-                            focusRequester(focusRequester = contentFocusRequester)
-                                .focusProperties {
-                                    onExit = {
-                                        if (requestedFocusDirection == FocusDirection.Down &&
-                                            showNavigation && showBottomBar &&
-                                            displayedFabState != null
-                                        ) {
-                                            fabFocusRequester.requestFocus()
-                                        }
-                                    }
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .thenIf(condition = isTv) {
+                    focusRequester(focusRequester = contentFocusRequester)
+                        .focusProperties {
+                            onExit = {
+                                if (requestedFocusDirection == FocusDirection.Down &&
+                                    railVisible &&
+                                    displayedFabState != null
+                                ) {
+                                    fabFocusRequester.requestFocus()
                                 }
-                                .focusGroup()
-                        },
-                ) {
-                    content(
-                        PaddingValues(
-                            start = if (showNavRail) railWidth else 0.dp,
-                            bottom = it.calculateBottomPadding(),
-                        ),
-                    )
-                }
-            },
-        )
+                            }
+                        }
+                        .focusGroup()
+                },
+        ) {
+            content(
+                PaddingValues(
+                    start = if (showBottomBar) railWidth else 0.dp,
+                    bottom = 0.dp,
+                ),
+            )
+        }
+
         AnimatedVisibility(
-            visible = showNavRail && showNavigation,
+            visible = railVisible,
             enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
             exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start),
+            modifier = Modifier.align(Alignment.CenterStart),
         ) {
             NextNavigationRail(
                 state = state,
-                modifier = Modifier.onSizeChanged {
-                    railWidth =
-                        with(receiver = density) { it.width.toDp() }
-                },
+                onSettingsClick = { state.currentStack.navigateToSettings() },
             )
+        }
+
+        AnimatedVisibility(
+            visible = railVisible && displayedFabState != null,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(
+                    end = 24.dp,
+                    bottom = 24.dp,
+                ),
+        ) {
+            displayedFabState?.let { fab ->
+                FloatingActionButton(
+                    onClick = fab.onClick,
+                    modifier = Modifier
+                        .testTag(tag = "top_level_fab")
+                        .focusRequester(focusRequester = fabFocusRequester)
+                        .tvFocusRing(shape = MaterialTheme.shapes.large)
+                        .focusProperties {
+                            if (isTv) {
+                                up = fab.upFocusRequester.takeUnless { it == FocusRequester.Default }
+                                    ?: contentFocusRequester
+                            }
+                        },
+                    shape = MaterialTheme.shapes.large,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    AnimatedContent(
+                        targetState = fab,
+                        transitionSpec = {
+                            fadeIn(
+                                animationSpec = tween(
+                                    durationMillis = 250,
+                                    easing = FastOutSlowInEasing,
+                                ),
+                            ) +
+                                scaleIn(
+                                    animationSpec = tween(
+                                        durationMillis = 250,
+                                        easing = FastOutSlowInEasing,
+                                    ),
+                                    initialScale = 0.25f,
+                                ) togetherWith
+                                fadeOut(
+                                    animationSpec = tween(
+                                        durationMillis = 250,
+                                        easing = FastOutSlowInEasing,
+                                    ),
+                                ) +
+                                scaleOut(
+                                    animationSpec = tween(
+                                        durationMillis = 250,
+                                        easing = FastOutSlowInEasing,
+                                    ),
+                                    targetScale = 0.25f,
+                                )
+                        },
+                        label = "fab_icon_swap",
+                    ) { targetFab ->
+                        Icon(
+                            imageVector = targetFab.icon,
+                            contentDescription = null,
+                        )
+                    }
+                }
+            }
         }
     }
 }

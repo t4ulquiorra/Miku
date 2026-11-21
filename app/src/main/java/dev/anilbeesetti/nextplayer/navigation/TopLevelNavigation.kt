@@ -27,12 +27,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -47,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableIntState
@@ -87,6 +91,24 @@ import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDe
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberDecoratedNavEntries
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -100,13 +122,23 @@ import dev.anilbeesetti.nextplayer.core.ui.components.TopLevelFabState
 import dev.anilbeesetti.nextplayer.core.ui.components.thenIf
 import dev.anilbeesetti.nextplayer.core.ui.components.tvFocusRing
 import dev.anilbeesetti.nextplayer.core.ui.designsystem.NextIcons
+import dev.anilbeesetti.nextplayer.core.ui.theme.BricolageGrotesque
+import dev.anilbeesetti.nextplayer.core.ui.theme.JetBrainsMono
+import dev.anilbeesetti.nextplayer.core.ui.theme.LocalAppAccent
+import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeBorder
+import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeBorderStrong
+import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeInk
+import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeInkDim
+import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeInkMuted
+import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeSurface
 import dev.anilbeesetti.nextplayer.feature.more.navigation.MoreRoute
 import dev.anilbeesetti.nextplayer.feature.network.navigation.NetworkRoute
 import dev.anilbeesetti.nextplayer.feature.playlist.navigation.PlaylistListRoute
 import dev.anilbeesetti.nextplayer.feature.videopicker.navigation.MediaPickerRoute
+import dev.anilbeesetti.nextplayer.settings.navigation.navigateToSettings
 
 /**
- * Top-level destinations shown in the bottom bar / nav rail. The first entry is the start (exit)
+ * Top-level destinations shown in the left rail. The first entry is the start (exit)
  * destination — pressing back from any other tab returns here before leaving the app.
  */
 enum class TopLevelDestination(
@@ -114,30 +146,40 @@ enum class TopLevelDestination(
     val icon: ImageVector,
     @StringRes val labelRes: Int,
     val fabKey: String? = null,
+    val number: String,
+    val railLabel: String,
 ) {
     MEDIA(
         MediaPickerRoute(),
         NextIcons.Home,
         R.string.home,
         TopLevelFabKey.MEDIA,
+        number = "01",
+        railLabel = "HOME",
     ),
     PLAYLISTS(
         PlaylistListRoute,
         NextIcons.Playlist,
         R.string.playlists,
         TopLevelFabKey.PLAYLISTS,
+        number = "02",
+        railLabel = "LISTS",
     ),
     NETWORK(
         NetworkRoute,
         NextIcons.Network,
         R.string.network,
         TopLevelFabKey.NETWORK,
+        number = "03",
+        railLabel = "NET",
     ),
     MORE(
         MoreRoute,
         NextIcons.More,
         R.string.more,
         TopLevelFabKey.MORE,
+        number = "04",
+        railLabel = "MORE",
     ),
 }
 
@@ -588,54 +630,194 @@ fun NavigationView(
 }
 
 @Composable
-fun NextNavigationRail(state: TopLevelNavState, modifier: Modifier = Modifier) {
-    NavigationRail(
-        modifier = modifier.fillMaxHeight(),
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+fun NextNavigationRail(
+    state: TopLevelNavState,
+    modifier: Modifier = Modifier,
+    onSettingsClick: () -> Unit = { state.currentStack.navigateToSettings() },
+) {
+    val accent = LocalAppAccent.current
+    val view = LocalView.current
+    val performSoftHaptic: () -> Unit = remember(view) {
+        {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                view.performHapticFeedback(HapticFeedbackConstants.SEGMENT_TICK)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            } else {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            }
+        }
+    }
+
+    val destinations = state.destinations
+    val selectedIndex = state.selectedIndex.coerceIn(0, destinations.lastIndex)
+
+    Box(
+        modifier = modifier
+            .width(96.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.background)
+            .drawBehind {
+                val strokeWidth = 1.dp.toPx()
+                val x = size.width - strokeWidth / 2f
+                drawLine(
+                    color = PrototypeBorder,
+                    start = Offset(x, 0f),
+                    end = Offset(x, size.height),
+                    strokeWidth = strokeWidth,
+                )
+            }
+            .windowInsetsPadding(
+                WindowInsets.displayCutout.only(WindowInsetsSides.Start + WindowInsetsSides.Top),
+            ),
     ) {
         Column(
-            modifier = Modifier.fillMaxHeight(),
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(
-                8.dp,
-                Alignment.CenterVertically,
-            ),
         ) {
-            state.destinations.forEach { dest ->
-                val selected = state.topLevelRoute == dest.route
+            // "NP" monogram at top in accent color (MonoLabel style)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp, bottom = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "NP",
+                    fontFamily = JetBrainsMono,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.08.em,
+                    color = accent.color,
+                )
+            }
+
+            // 4 Items with sliding accent marker bar on the rail's left edge
+            BoxWithConstraints(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                val totalHeight = maxHeight
+                val itemCount = destinations.size
+                val itemHeight = if (itemCount > 0) totalHeight / itemCount else 0.dp
+                val targetMarkerY = itemHeight * selectedIndex
+
+                val animatedMarkerY by animateDpAsState(
+                    targetValue = targetMarkerY,
+                    animationSpec = spring(
+                        dampingRatio = 0.75f,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    label = "rail_marker_spring",
+                )
+
+                // Accent marker bar on the left edge
                 Box(
-                    Modifier
-                        .tvFocusRing(shape = RoundedCornerShape(99.dp))
-                        .clip(shape = CircleShape)
-                        .selectable(
-                            selected = state.topLevelRoute == dest.route,
-                            onClick = { state.switchTo(dest.route) },
-                            role = Role.Tab,
-                        )
-                        .background(
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                Color.Transparent
+                    modifier = Modifier
+                        .offset(y = animatedMarkerY)
+                        .width(4.dp)
+                        .height(itemHeight)
+                        .background(accent.color),
+                )
+
+                // 4 items
+                Column(modifier = Modifier.fillMaxSize()) {
+                    destinations.forEachIndexed { index, destination ->
+                        val isSelected = index == selectedIndex
+                        val itemColor = if (isSelected) PrototypeInk else PrototypeInkMuted
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(itemHeight)
+                                .selectable(
+                                    selected = isSelected,
+                                    onClick = {
+                                        performSoftHaptic()
+                                        state.switchTo(destination.route)
+                                    },
+                                    role = Role.Tab,
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                )
+                                .tvFocusRing(shape = RoundedCornerShape(12.dp)),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text(
+                                text = destination.number,
+                                fontFamily = JetBrainsMono,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = 0.1.em,
+                                color = itemColor,
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Text(
+                                text = destination.railLabel,
+                                modifier = Modifier.graphicsLayer { rotationZ = -90f },
+                                style = TextStyle(
+                                    fontFamily = BricolageGrotesque,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    letterSpacing = 0.22.em,
+                                ),
+                                color = itemColor,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Settings gear button pinned at bottom
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp, top = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                val interactionSource = remember { MutableInteractionSource() }
+                val isPressed by interactionSource.collectIsPressedAsState()
+                val scale by animateFloatAsState(
+                    targetValue = if (isPressed) 0.92f else 1f,
+                    label = "gear_scale",
+                )
+
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        }
+                        .clip(CircleShape)
+                        .background(PrototypeSurface)
+                        .border(1.dp, PrototypeBorderStrong, CircleShape)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = {
+                                performSoftHaptic()
+                                onSettingsClick()
                             },
                         )
-                        .padding(16.dp),
+                        .tvFocusRing(shape = CircleShape),
                     contentAlignment = Alignment.Center,
-                    propagateMinConstraints = true,
                 ) {
-                    CompositionLocalProvider(
-                        value = LocalContentColor provides if (selected) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    ) {
-                        Icon(
-                            imageVector = dest.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
+                    Icon(
+                        imageVector = NextIcons.Settings,
+                        contentDescription = stringResource(R.string.settings),
+                        tint = PrototypeInkMuted,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
         }
