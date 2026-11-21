@@ -1,5 +1,6 @@
 package dev.anilbeesetti.nextplayer.feature.more.screens.more
 
+import android.content.res.Configuration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -36,6 +37,7 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -48,10 +50,8 @@ import dev.anilbeesetti.nextplayer.core.model.ApplicationPreferences
 import dev.anilbeesetti.nextplayer.core.model.Video
 import dev.anilbeesetti.nextplayer.core.ui.R
 import dev.anilbeesetti.nextplayer.core.ui.base.DataState
-import dev.anilbeesetti.nextplayer.core.ui.components.BindTopLevelFab
 import dev.anilbeesetti.nextplayer.core.ui.components.LocalNavigationBottomPadding
 import dev.anilbeesetti.nextplayer.core.ui.components.NextTopAppBar
-import dev.anilbeesetti.nextplayer.core.ui.components.TopLevelFabKey
 import dev.anilbeesetti.nextplayer.core.ui.components.rememberRestorableFocusState
 import dev.anilbeesetti.nextplayer.core.ui.components.restorableFocusGroup
 import dev.anilbeesetti.nextplayer.core.ui.components.restorableFocusItem
@@ -75,20 +75,33 @@ fun MoreScreen(viewModel: MoreViewModel) {
 
 @Composable
 internal fun MoreScreenContent(state: MoreUiState, onAction: (MoreAction) -> Unit) {
-    BindTopLevelFab(
-        TopLevelFabKey.MORE,
-        NextIcons.Settings,
-    ) { onAction(MoreAction.OpenSettings) }
     val filePicker =
         rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
             uri?.let { onAction(MoreAction.PlayVideo(it.toString())) }
         }
+
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isNavRail = configuration.screenWidthDp >= 600 && isLandscape
 
     Scaffold(
         topBar = {
             NextTopAppBar(
                 title = stringResource(R.string.more),
                 fontWeight = FontWeight.Bold,
+                actions = {
+                    if (!isNavRail) {
+                        IconButton(
+                            onClick = { onAction(MoreAction.OpenSettings) },
+                            modifier = Modifier.tvFocusRing(),
+                        ) {
+                            Icon(
+                                imageVector = NextIcons.Settings,
+                                contentDescription = stringResource(R.string.settings),
+                            )
+                        }
+                    }
+                },
             )
         },
         containerColor = MaterialTheme.colorScheme.surfaceContainer,

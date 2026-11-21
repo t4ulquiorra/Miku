@@ -17,6 +17,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -75,6 +77,7 @@ import dev.anilbeesetti.nextplayer.core.ui.components.TopLevelFabState
 import dev.anilbeesetti.nextplayer.core.ui.components.thenIf
 import dev.anilbeesetti.nextplayer.core.ui.components.tvFocusRing
 import dev.anilbeesetti.nextplayer.core.ui.theme.NextPlayerTheme
+import dev.anilbeesetti.nextplayer.navigation.NextBottomRail
 import dev.anilbeesetti.nextplayer.navigation.NextNavigationRail
 import dev.anilbeesetti.nextplayer.navigation.TopLevelDestination
 import dev.anilbeesetti.nextplayer.navigation.TopLevelNavState
@@ -230,7 +233,8 @@ class MainActivity : FragmentActivity() {
                             }
                         }
                         CompositionLocalProvider(
-                            LocalNavigationBottomPadding provides 0.dp,
+                            LocalNavigationBottomPadding provides
+                                layoutPaddingValues.calculateBottomPadding(),
                             LocalTopLevelBottomBarVisibleSetter provides
                                 { showTopLevelBottomBar = it },
                             LocalTopLevelFabSetter provides { key, state ->
@@ -287,11 +291,13 @@ fun NavigationLayout(
     val configuration = LocalConfiguration.current
     val contentFocusRequester = remember { FocusRequester() }
     val fabFocusRequester = remember { FocusRequester() }
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val useNavRail = configuration.screenWidthDp >= 600 && isLandscape
     val showNavigation =
         state.currentStack.lastOrNull()?.let { state.topLevelContentKeys.contains(element = it) } ==
             true
-    val railVisible = showNavigation && showBottomBar
-    val railWidth = if (configuration.screenWidthDp >= 600) 96.dp else 72.dp
+    val navVisible = showNavigation && showBottomBar
+    val railWidth = 96.dp
     val selectedFabState = state.destinations[state.selectedIndex].fabKey?.let(
         block = fabStates::get,
     )
@@ -307,7 +313,7 @@ fun NavigationLayout(
                         .focusProperties {
                             onExit = {
                                 if (requestedFocusDirection == FocusDirection.Down &&
-                                    railVisible &&
+                                    navVisible &&
                                     displayedFabState != null
                                 ) {
                                     fabFocusRequester.requestFocus()
@@ -319,14 +325,14 @@ fun NavigationLayout(
         ) {
             content(
                 PaddingValues(
-                    start = if (showBottomBar) railWidth else 0.dp,
-                    bottom = 0.dp,
+                    start = if (useNavRail && showBottomBar) railWidth else 0.dp,
+                    bottom = if (!useNavRail && showBottomBar) 64.dp else 0.dp,
                 ),
             )
         }
 
         AnimatedVisibility(
-            visible = railVisible,
+            visible = navVisible && useNavRail,
             enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
             exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start),
             modifier = Modifier.align(Alignment.CenterStart),
@@ -339,15 +345,26 @@ fun NavigationLayout(
         }
 
         AnimatedVisibility(
-            visible = railVisible && displayedFabState != null,
+            visible = navVisible && !useNavRail,
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut() + slideOutVertically { it },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            NextBottomRail(
+                state = state,
+            )
+        }
+
+        AnimatedVisibility(
+            visible = navVisible && displayedFabState != null,
             enter = fadeIn() + scaleIn(),
             exit = fadeOut() + scaleOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
                 .padding(
-                    end = 24.dp,
-                    bottom = 24.dp,
+                    end = if (useNavRail) 24.dp else 16.dp,
+                    bottom = if (useNavRail) 24.dp else (64.dp + 16.dp),
                 ),
         ) {
             displayedFabState?.let { fab ->

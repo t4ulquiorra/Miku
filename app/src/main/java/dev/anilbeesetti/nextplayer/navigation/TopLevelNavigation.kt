@@ -631,17 +631,15 @@ fun NavigationView(
     }
 }
 
+val RailMarkerSpring = spring<Dp>(
+    dampingRatio = 0.75f,
+    stiffness = Spring.StiffnessMediumLow,
+)
+
 @Composable
-fun NextNavigationRail(
-    state: TopLevelNavState,
-    modifier: Modifier = Modifier,
-    railWidth: Dp = if (LocalConfiguration.current.screenWidthDp >= 600) 96.dp else 72.dp,
-    onSettingsClick: () -> Unit = { state.currentStack.navigateToSettings() },
-) {
-    val isCompact = railWidth < 80.dp
-    val accent = LocalAppAccent.current
+internal fun rememberSoftHaptic(): () -> Unit {
     val view = LocalView.current
-    val performSoftHaptic: () -> Unit = remember(view) {
+    return remember(view) {
         {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 view.performHapticFeedback(HapticFeedbackConstants.SEGMENT_TICK)
@@ -652,6 +650,18 @@ fun NextNavigationRail(
             }
         }
     }
+}
+
+@Composable
+fun NextNavigationRail(
+    state: TopLevelNavState,
+    modifier: Modifier = Modifier,
+    railWidth: Dp = 96.dp,
+    onSettingsClick: () -> Unit = { state.currentStack.navigateToSettings() },
+) {
+    val isCompact = railWidth < 80.dp
+    val accent = LocalAppAccent.current
+    val performSoftHaptic = rememberSoftHaptic()
 
     val destinations = state.destinations
     val selectedIndex = state.selectedIndex.coerceIn(0, destinations.lastIndex)
@@ -715,10 +725,7 @@ fun NextNavigationRail(
 
                 val animatedMarkerY by animateDpAsState(
                     targetValue = targetMarkerY,
-                    animationSpec = spring(
-                        dampingRatio = 0.75f,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
+                    animationSpec = RailMarkerSpring,
                     label = "rail_marker_spring",
                 )
 
@@ -828,6 +835,117 @@ fun NextNavigationRail(
                         tint = PrototypeInkMuted,
                         modifier = Modifier.size(if (isCompact) 18.dp else 20.dp),
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Responsive bottom navigation rail shown on compact / portrait screens.
+ *
+ * Full-width bar (~64dp tall + navigation bar inset), 1dp top border, 4 equal slots with
+ * mono index (01-04, 9.5sp) above the horizontal label (HOME, LISTS, NET, MORE, 11sp bold, 0.12em),
+ * active bright ink / inactive muted ink, and a 3dp-tall accent marker sliding along the top edge
+ * with [RailMarkerSpring].
+ */
+@Composable
+fun NextBottomRail(
+    state: TopLevelNavState,
+    modifier: Modifier = Modifier,
+) {
+    val destinations = state.destinations
+    val selectedIndex = state.selectedIndex.coerceIn(0, destinations.lastIndex)
+    val accent = LocalAppAccent.current
+    val performSoftHaptic = rememberSoftHaptic()
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .drawBehind {
+                val strokeWidth = 1.dp.toPx()
+                drawLine(
+                    color = PrototypeBorder,
+                    start = Offset(0f, strokeWidth / 2f),
+                    end = Offset(size.width, strokeWidth / 2f),
+                    strokeWidth = strokeWidth,
+                )
+            }
+            .navigationBarsPadding(),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp),
+        ) {
+            val totalWidth = maxWidth
+            val itemCount = destinations.size
+            val itemWidth = if (itemCount > 0) totalWidth / itemCount else 0.dp
+            val targetMarkerX = itemWidth * selectedIndex
+
+            val animatedMarkerX by animateDpAsState(
+                targetValue = targetMarkerX,
+                animationSpec = RailMarkerSpring,
+                label = "bottom_rail_marker_spring",
+            )
+
+            // 3dp-tall accent marker on the top edge of the bar
+            Box(
+                modifier = Modifier
+                    .offset(x = animatedMarkerX)
+                    .width(itemWidth)
+                    .height(3.dp)
+                    .background(accent.color),
+            )
+
+            Row(modifier = Modifier.fillMaxSize()) {
+                destinations.forEachIndexed { index, destination ->
+                    val isSelected = index == selectedIndex
+                    val itemColor = if (isSelected) PrototypeInk else PrototypeInkMuted
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .selectable(
+                                selected = isSelected,
+                                onClick = {
+                                    performSoftHaptic()
+                                    state.switchTo(destination.route)
+                                },
+                                role = Role.Tab,
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() },
+                            )
+                            .tvFocusRing(shape = RoundedCornerShape(12.dp)),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = destination.number,
+                            fontFamily = JetBrainsMono,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 0.08.em,
+                            color = itemColor,
+                        )
+
+                        Spacer(modifier = Modifier.height(3.dp))
+
+                        Text(
+                            text = destination.railLabel,
+                            style = TextStyle(
+                                fontFamily = BricolageGrotesque,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                letterSpacing = 0.12.em,
+                            ),
+                            color = itemColor,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
                 }
             }
         }
