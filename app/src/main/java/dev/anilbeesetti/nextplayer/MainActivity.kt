@@ -50,6 +50,7 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -283,13 +284,14 @@ fun NavigationLayout(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val isTv = LocalContext.current.isTelevision
+    val configuration = LocalConfiguration.current
     val contentFocusRequester = remember { FocusRequester() }
     val fabFocusRequester = remember { FocusRequester() }
     val showNavigation =
         state.currentStack.lastOrNull()?.let { state.topLevelContentKeys.contains(element = it) } ==
             true
     val railVisible = showNavigation && showBottomBar
-    val railWidth = 96.dp
+    val railWidth = if (configuration.screenWidthDp >= 600) 96.dp else 72.dp
     val selectedFabState = state.destinations[state.selectedIndex].fabKey?.let(
         block = fabStates::get,
     )
@@ -331,6 +333,7 @@ fun NavigationLayout(
         ) {
             NextNavigationRail(
                 state = state,
+                railWidth = railWidth,
                 onSettingsClick = { state.currentStack.navigateToSettings() },
             )
         }

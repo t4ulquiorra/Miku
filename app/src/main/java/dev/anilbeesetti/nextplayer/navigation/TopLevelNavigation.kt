@@ -78,12 +78,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LookaheadScope
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -177,7 +179,7 @@ enum class TopLevelDestination(
         MoreRoute,
         NextIcons.More,
         R.string.more,
-        TopLevelFabKey.MORE,
+        fabKey = null,
         number = "04",
         railLabel = "MORE",
     ),
@@ -633,8 +635,10 @@ fun NavigationView(
 fun NextNavigationRail(
     state: TopLevelNavState,
     modifier: Modifier = Modifier,
+    railWidth: Dp = if (LocalConfiguration.current.screenWidthDp >= 600) 96.dp else 72.dp,
     onSettingsClick: () -> Unit = { state.currentStack.navigateToSettings() },
 ) {
+    val isCompact = railWidth < 80.dp
     val accent = LocalAppAccent.current
     val view = LocalView.current
     val performSoftHaptic: () -> Unit = remember(view) {
@@ -654,7 +658,7 @@ fun NextNavigationRail(
 
     Box(
         modifier = modifier
-            .width(96.dp)
+            .width(railWidth)
             .fillMaxHeight()
             .background(MaterialTheme.colorScheme.background)
             .drawBehind {
@@ -682,13 +686,16 @@ fun NextNavigationRail(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 24.dp, bottom = 12.dp),
+                    .padding(
+                        top = if (isCompact) 16.dp else 24.dp,
+                        bottom = if (isCompact) 8.dp else 12.dp,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = "NP",
                     fontFamily = JetBrainsMono,
-                    fontSize = 20.sp,
+                    fontSize = if (isCompact) 17.sp else 20.sp,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = 0.08.em,
                     color = accent.color,
@@ -719,7 +726,7 @@ fun NextNavigationRail(
                 Box(
                     modifier = Modifier
                         .offset(y = animatedMarkerY)
-                        .width(4.dp)
+                        .width(if (isCompact) 3.dp else 4.dp)
                         .height(itemHeight)
                         .background(accent.color),
                 )
@@ -751,13 +758,13 @@ fun NextNavigationRail(
                             Text(
                                 text = destination.number,
                                 fontFamily = JetBrainsMono,
-                                fontSize = 11.sp,
+                                fontSize = if (isCompact) 9.5.sp else 11.sp,
                                 fontWeight = FontWeight.Medium,
-                                letterSpacing = 0.1.em,
+                                letterSpacing = if (isCompact) 0.08.em else 0.1.em,
                                 color = itemColor,
                             )
 
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(if (isCompact) 10.dp else 14.dp))
 
                             Text(
                                 text = destination.railLabel,
@@ -765,8 +772,8 @@ fun NextNavigationRail(
                                 style = TextStyle(
                                     fontFamily = BricolageGrotesque,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    letterSpacing = 0.22.em,
+                                    fontSize = if (isCompact) 11.5.sp else 14.sp,
+                                    letterSpacing = if (isCompact) 0.16.em else 0.22.em,
                                 ),
                                 color = itemColor,
                                 maxLines = 1,
@@ -781,7 +788,10 @@ fun NextNavigationRail(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 20.dp, top = 12.dp),
+                    .padding(
+                        bottom = if (isCompact) 16.dp else 20.dp,
+                        top = if (isCompact) 8.dp else 12.dp,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 val interactionSource = remember { MutableInteractionSource() }
@@ -793,7 +803,7 @@ fun NextNavigationRail(
 
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(if (isCompact) 38.dp else 44.dp)
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
@@ -816,7 +826,7 @@ fun NextNavigationRail(
                         imageVector = NextIcons.Settings,
                         contentDescription = stringResource(R.string.settings),
                         tint = PrototypeInkMuted,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(if (isCompact) 18.dp else 20.dp),
                     )
                 }
             }
