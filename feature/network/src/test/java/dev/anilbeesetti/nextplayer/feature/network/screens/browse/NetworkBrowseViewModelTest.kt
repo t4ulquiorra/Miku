@@ -381,7 +381,7 @@ class NetworkBrowseViewModelTest {
                 preferences.applicationPreferences.value.sortBy,
             )
             assertEquals(
-                MediaLayoutMode.LIST,
+                MediaLayoutMode.CRATE,
                 preferences.applicationPreferences.value.mediaLayoutMode,
             )
             viewModel.onAction(action = NetworkBrowseAction.PlayAll)
