@@ -452,6 +452,7 @@ internal fun MediaPickerScreenContent(
                         ) {
                             CrateHome(
                                 folders = mediaHolder.folders,
+                                recentlyPlayedFolder = state.recentlyPlayedFolder,
                                 onOpenFolder = {
                                     onAction(MediaPickerAction.OnFolderClick(folderPath = it))
                                 },

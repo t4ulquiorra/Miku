@@ -22,12 +22,14 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -37,17 +39,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -91,13 +99,11 @@ private val ORGANIC_OFFSETS = arrayOf(
 )
 
 private val PAPERS = arrayOf(
-    PrototypePaper0,
-    PrototypePaper1,
-    PrototypePaper2,
-    PrototypePaper3,
+    PrototypePaper0, // #D9CBA6
+    PrototypePaper1, // #CDBE96
+    PrototypePaper2, // #E2D6B8
+    PrototypePaper3, // #C4B48A
 )
-
-private val TAB_SLOTS_FRACTION = floatArrayOf(0.04f, 0.28f, 0.52f, 0.74f)
 
 @Composable
 fun CrateHome(
@@ -105,6 +111,7 @@ fun CrateHome(
     onOpenFolder: (String) -> Unit,
     onPlayLast: () -> Unit,
     modifier: Modifier = Modifier,
+    recentlyPlayedFolder: Folder? = null,
     contentPadding: PaddingValues = PaddingValues(),
 ) {
     if (folders.isEmpty()) {
@@ -141,6 +148,7 @@ fun CrateHome(
             .background(PrototypeBg),
     ) {
         val density = LocalDensity.current.density
+        val fontScale = LocalDensity.current.fontScale
         val layoutDirection = LocalLayoutDirection.current
 
         val containerWidth = maxWidth
@@ -164,37 +172,41 @@ fun CrateHome(
         val availableStackHeight = (containerHeight - bottomReserved - topReserved)
             .coerceAtLeast(160.dp)
 
-        // 3. Tab rise above front card
-        val tabHeight = (availableStackHeight * 0.11f).coerceIn(26.dp, 36.dp)
+        // 3. Approach: Exact Design Sizing per layout scaled uniformly by s
+        val isLandscape = availableStackWidth >= 600.dp
+        val designW = if (isLandscape) 820.dp else 344.dp
+        val designH = if (isLandscape) 410.dp else 220.dp
+        val designTabRise = if (isLandscape) 36.dp else 30.dp
+        val stackRoom = if (isLandscape) 64.dp else 46.dp
+
+        // Compute uniform scale factor s capped at 1.4
+        val s = minOf(
+            availableStackWidth / (designW + 40.dp),
+            availableStackHeight / (designH + designTabRise + stackRoom),
+        ).coerceAtMost(1.4f)
+
+        // Actual dimensions on screen in normal dp
+        val actualCardWidth = designW * s
+        val actualCardHeight = designH * s
+        val actualTabRise = designTabRise * s
+
+        // 4. Tab rise and stack spacing (kept as before)
         val visibleCardsBehind = minOf(folders.lastIndex, 4)
         val stepY = if (visibleCardsBehind > 0) {
-            (availableStackHeight * 0.05f).coerceIn(7.dp, 22.dp)
+            (actualTabRise * 0.55f).coerceIn(7.dp, 22.dp)
         } else {
             0.dp
         }
-        val tabRise = tabHeight + (stepY * visibleCardsBehind)
-
-        // 4. Derive card width and height (height wins: if card would not fit, shrink it)
-        val maxCardHeight = (availableStackHeight - tabRise).coerceAtLeast(140.dp)
-        val targetAspect = if (availableStackWidth >= 540.dp) 2.0f else 1.45f
-
-        val candidateWidth = minOf(availableStackWidth, 820.dp)
-        val candidateHeight = candidateWidth / targetAspect
-
-        val cardHeight = minOf(candidateHeight, maxCardHeight)
-        val cardWidth = minOf(candidateWidth, cardHeight * targetAspect)
-
-        val tabWidth = (cardWidth * 0.32f).coerceIn(88.dp, 240.dp)
+        val totalStackRise = actualTabRise + (stepY * visibleCardsBehind)
 
         // 5. Vertical positioning of the front card
-        val unusedHeight = (availableStackHeight - (cardHeight + tabRise)).coerceAtLeast(0.dp)
-        val frontCardTopY = topReserved + tabRise + (unusedHeight * 0.35f)
+        val unusedHeight = (availableStackHeight - (actualCardHeight + totalStackRise)).coerceAtLeast(0.dp)
+        val frontCardTopY = topReserved + totalStackRise + (unusedHeight * 0.35f)
 
         // 6. Horizontal positioning: center in availableStackWidth, reserve right column
         val stackAreaStartX = startContentPadding + 8.dp
         val stackCenterX = stackAreaStartX + (availableStackWidth / 2f)
-        val nominalCardHalfWidth = cardWidth / 2f
-        val maxRightLeeway = (stackAreaStartX + availableStackWidth) - (stackCenterX + nominalCardHalfWidth)
+        val maxRightLeeway = (stackAreaStartX + availableStackWidth) - (stackCenterX + (actualCardWidth / 2f))
         val maxAllowedShiftX = maxRightLeeway.coerceAtLeast(0.dp)
 
         // 7. Limit composition to ~8 cards around current animated position
@@ -218,14 +230,18 @@ fun CrateHome(
                         totalFolders = folders.size,
                         currentPos = animatedPos,
                         density = density,
-                        cardWidth = cardWidth,
-                        cardHeight = cardHeight,
-                        tabWidth = tabWidth,
-                        tabHeight = tabHeight,
+                        fontScale = fontScale,
+                        s = s,
+                        isLandscape = isLandscape,
+                        designW = designW,
+                        designH = designH,
+                        actualCardWidth = actualCardWidth,
+                        actualCardHeight = actualCardHeight,
                         frontCardTopY = frontCardTopY,
                         stackCenterX = stackCenterX,
                         stepY = stepY,
                         maxAllowedShiftX = maxAllowedShiftX,
+                        isLastPlayed = folder.path == recentlyPlayedFolder?.path,
                         onTabClick = { targetIndex = idx },
                         onBodyClick = {
                             if (safeTarget == idx) {
@@ -308,14 +324,18 @@ private fun CrateFolderCard(
     totalFolders: Int,
     currentPos: Float,
     density: Float,
-    cardWidth: Dp,
-    cardHeight: Dp,
-    tabWidth: Dp,
-    tabHeight: Dp,
+    fontScale: Float,
+    s: Float,
+    isLandscape: Boolean,
+    designW: Dp,
+    designH: Dp,
+    actualCardWidth: Dp,
+    actualCardHeight: Dp,
     frontCardTopY: Dp,
     stackCenterX: Dp,
     stepY: Dp,
     maxAllowedShiftX: Dp,
+    isLastPlayed: Boolean,
     onTabClick: () -> Unit,
     onBodyClick: () -> Unit,
     onOpenFolder: () -> Unit,
@@ -324,14 +344,14 @@ private fun CrateFolderCard(
     val d = index - currentPos
     val isFront = abs(d) < 0.55f
 
+    val accent = LocalAppAccent.current
     val paperColor = PAPERS[index % PAPERS.size]
-    val tabFraction = TAB_SLOTS_FRACTION[index % TAB_SLOTS_FRACTION.size]
-    val tabOffsetStart = (cardWidth - tabWidth - 16.dp) * tabFraction + 8.dp
+    val tabBg = if (isLastPlayed) accent.color else paperColor
 
-    // 3D Transform calculations matching updateCrateTransforms in prototype.html
+    // 3D Transform calculations matching updateCrateTransforms in prototype.html (untouched)
     val org = ORGANIC_OFFSETS[index % ORGANIC_OFFSETS.size]
     val ease = if (d > 0f) (d * 1.1f).coerceAtMost(1f) else 0f
-    val rawTx = org.x * ease * (cardWidth.value / 820f).coerceIn(0.2f, 1f)
+    val rawTx = org.x * ease * (actualCardWidth.value / 820f).coerceIn(0.2f, 1f)
     val tx = rawTx.coerceIn(-maxAllowedShiftX.value, maxAllowedShiftX.value)
     val rz = org.rz * ease
 
@@ -355,12 +375,12 @@ private fun CrateFolderCard(
     val zIndex = 1000f - d * 10f
     val brightness = (1f - d.coerceAtLeast(0f) * 0.08f).coerceIn(0.45f, 1f)
 
-    val cardLeft = stackCenterX - (cardWidth / 2f)
+    val cardLeft = stackCenterX - (actualCardWidth / 2f)
 
     Box(
         modifier = modifier
             .offset(x = cardLeft, y = frontCardTopY)
-            .size(width = cardWidth, height = cardHeight)
+            .size(width = actualCardWidth, height = actualCardHeight)
             .zIndex(zIndex)
             .graphicsLayer {
                 translationX = tx * density
@@ -371,323 +391,713 @@ private fun CrateFolderCard(
                 scaleY = scale
                 this.alpha = alpha
                 cameraDistance = 24f * density
+                clip = false
             },
     ) {
-        // 1. Top Folder Tab
-        Surface(
-            onClick = onTabClick,
-            shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp),
-            color = paperColor,
-            shadowElevation = 3.dp,
-            modifier = Modifier
-                .offset(x = tabOffsetStart, y = -tabHeight + 2.dp)
-                .size(width = tabWidth, height = tabHeight),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = if (cardWidth < 360.dp) 8.dp else 12.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = String.format("%02d", index + 1),
-                    fontFamily = JetBrainsMono,
-                    fontSize = if (cardHeight < 240.dp) 10.sp else 11.sp,
-                    color = PrototypeInkPaper.copy(alpha = 0.7f),
-                )
-                Text(
-                    text = folder.name,
-                    fontFamily = BricolageGrotesque,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (cardHeight < 240.dp) 11.5.sp else 13.sp,
-                    color = PrototypeInkPaper,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = folder.videosCount.toString(),
-                    fontFamily = JetBrainsMono,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = if (cardHeight < 240.dp) 10.sp else 11.sp,
-                    color = PrototypeInkPaper,
-                )
-            }
+        // Uniformly scale all design dp and sp by s
+        val scaledDensity = remember(density, s, fontScale) {
+            Density(density = density * s, fontScale = fontScale)
         }
 
-        // 2. Folder Main Body
-        Surface(
-            onClick = onBodyClick,
-            shape = RoundedCornerShape(
-                topStart = 6.dp,
-                topEnd = 18.dp,
-                bottomEnd = 16.dp,
-                bottomStart = 16.dp,
-            ),
-            color = paperColor,
-            shadowElevation = 8.dp,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (isFront) {
-                    FrontCardFace(
-                        folder = folder,
-                        index = index,
-                        totalFolders = totalFolders,
-                        cardWidth = cardWidth,
-                        cardHeight = cardHeight,
-                        onOpenFolder = onOpenFolder,
-                    )
-                }
-
-                // Darkening falloff with depth (prototype brightness filter)
-                if (brightness < 0.98f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = (1f - brightness) * 0.65f)),
-                    )
-                }
+        CompositionLocalProvider(LocalDensity provides scaledDensity) {
+            if (isLandscape) {
+                LandscapeCardContent(
+                    folder = folder,
+                    index = index,
+                    totalFolders = totalFolders,
+                    isFront = isFront,
+                    isLastPlayed = isLastPlayed,
+                    paperColor = paperColor,
+                    tabBg = tabBg,
+                    brightness = brightness,
+                    onTabClick = onTabClick,
+                    onBodyClick = onBodyClick,
+                    onOpenFolder = onOpenFolder,
+                )
+            } else {
+                PortraitCardContent(
+                    folder = folder,
+                    index = index,
+                    totalFolders = totalFolders,
+                    isFront = isFront,
+                    isLastPlayed = isLastPlayed,
+                    paperColor = paperColor,
+                    tabBg = tabBg,
+                    brightness = brightness,
+                    onTabClick = onTabClick,
+                    onBodyClick = onBodyClick,
+                    onOpenFolder = onOpenFolder,
+                )
             }
         }
     }
 }
 
+/**
+ * LANDSCAPE DESIGN (820 x 410)
+ * All dimensions below are EXACT DESIGN VALUES in dp / sp.
+ */
 @Composable
-private fun FrontCardFace(
+private fun LandscapeCardContent(
     folder: Folder,
     index: Int,
     totalFolders: Int,
-    cardWidth: Dp,
-    cardHeight: Dp,
+    isFront: Boolean,
+    isLastPlayed: Boolean,
+    paperColor: Color,
+    tabBg: Color,
+    brightness: Float,
+    onTabClick: () -> Unit,
+    onBodyClick: () -> Unit,
     onOpenFolder: () -> Unit,
 ) {
     val accent = LocalAppAccent.current
 
-    val isCompact = cardHeight < 240.dp
-    val isVeryShort = cardHeight < 190.dp
-    val showWaveform = cardHeight >= 225.dp
-    val showPeekCards = cardWidth > 580.dp && cardHeight >= 260.dp
-
-    val hPadding = if (cardWidth > 480.dp) 24.dp else 16.dp
-    val vPadding = if (cardHeight > 280.dp) 18.dp else if (cardHeight > 210.dp) 12.dp else 8.dp
-
-    val titleFontSize = when {
-        cardHeight >= 340.dp -> 36.sp
-        cardHeight >= 250.dp -> 26.sp
-        cardHeight >= 200.dp -> 20.sp
-        else -> 17.sp
+    // Slots left: index%4 -> 30, 185, 340, 495
+    val tabSlotLeft = when (index % 4) {
+        0 -> 30.dp
+        1 -> 185.dp
+        2 -> 340.dp
+        else -> 495.dp
     }
-    val titleLineHeight = when {
-        cardHeight >= 340.dp -> 38.sp
-        cardHeight >= 250.dp -> 28.sp
-        cardHeight >= 200.dp -> 22.sp
-        else -> 19.sp
-    }
-    val titleMaxLines = if (cardHeight >= 220.dp) 2 else 1
 
-    Box(
+    // Card radii: TL 6, TR 20, BR 16, BL 16
+    val cardShape = RoundedCornerShape(
+        topStart = 6.dp,
+        topEnd = 20.dp,
+        bottomEnd = 16.dp,
+        bottomStart = 16.dp,
+    )
+
+    // 1. Tab: 248 x 46, sits 36 above card top edge, top corners 12, bottom 0, padding 9 top / 14 sides
+    Surface(
+        onClick = onTabClick,
+        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
+        color = tabBg,
+        shadowElevation = 3.dp,
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = hPadding, vertical = vPadding),
+            .offset(x = tabSlotLeft, y = (-36).dp)
+            .size(width = 248.dp, height = 46.dp)
+            .drawBehind {
+                drawLine(
+                    color = Color.White.copy(alpha = 0.35f),
+                    start = Offset(12.dp.toPx(), 1.dp.toPx()),
+                    end = Offset(size.width - 12.dp.toPx(), 1.dp.toPx()),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            },
     ) {
-        // Top row: "FOLDER 02 / 18" and "N NEW" stamp
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            MonoLabel(
-                text = "FOLDER ${String.format("%02d", index + 1)} / ${String.format("%02d", totalFolders)}",
-                color = PrototypeInkPaper.copy(alpha = 0.65f),
-                fontSize = if (isVeryShort) 9.5.sp else 11.sp,
-                letterSpacing = 0.12.em,
-            )
-
-            if (folder.newVideosCount > 0) {
-                Surface(
-                    shape = RoundedCornerShape(if (isCompact) 4.dp else 6.dp),
-                    border = BorderStroke(if (isCompact) 1.dp else 1.5.dp, PrototypeStamp),
-                    color = Color.Transparent,
-                    modifier = Modifier.graphicsLayer { rotationZ = -6f },
-                ) {
-                    Text(
-                        text = "${folder.newVideosCount} NEW",
-                        fontFamily = JetBrainsMono,
-                        fontSize = if (isVeryShort) 9.sp else 10.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrototypeStamp,
-                        letterSpacing = 0.12.em,
-                        modifier = Modifier.padding(
-                            horizontal = if (isVeryShort) 5.dp else 7.dp,
-                            vertical = if (isVeryShort) 1.5.dp else 2.5.dp,
-                        ),
-                    )
-                }
-            }
-        }
-
-        // Folder Title, Metadata, and Path
-        val topTextPadding = if (cardHeight > 280.dp) 28.dp else if (cardHeight > 210.dp) 18.dp else 12.dp
-        Column(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = topTextPadding)
-                .fillMaxWidth(if (showPeekCards) 0.62f else 0.95f),
+                .fillMaxSize()
+                .padding(start = 14.dp, end = 14.dp, top = 9.dp),
         ) {
+            Text(
+                text = String.format("%02d", index + 1),
+                fontFamily = JetBrainsMono,
+                fontSize = 11.sp,
+                color = PrototypeInkPaper.copy(alpha = 0.70f),
+            )
             Text(
                 text = folder.name,
                 fontFamily = BricolageGrotesque,
                 fontWeight = FontWeight.Bold,
-                fontSize = titleFontSize,
-                lineHeight = titleLineHeight,
-                color = PrototypeInkPaper,
-                maxLines = titleMaxLines,
+                fontSize = 14.5.sp,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+                color = PrototypeInkPaper,
             )
+            Text(
+                text = folder.videosCount.toString(),
+                fontFamily = JetBrainsMono,
+                fontSize = 11.sp,
+                color = PrototypeInkPaper,
+            )
+        }
+    }
 
-            val metaText = remember(folder.videosCount, folder.totalDuration) {
-                val countPart = "${folder.videosCount} ${if (folder.videosCount == 1) "VIDEO" else "VIDEOS"}"
-                if (folder.totalDuration > 0) {
-                    "$countPart · ${Utils.formatDurationMillis(folder.totalDuration)}"
-                } else {
-                    countPart
+    // 2. Card Body: 820 x 410, top highlight 2dp white 40%, shadow upward y -12 blur 28 black 40%
+    Surface(
+        onClick = onBodyClick,
+        shape = cardShape,
+        color = paperColor,
+        shadowElevation = 6.dp,
+        modifier = Modifier
+            .size(width = 820.dp, height = 410.dp)
+            .drawBehind {
+                try {
+                    drawIntoCanvas { canvas ->
+                        val shadowPaint = Paint().asFrameworkPaint().apply {
+                            color = android.graphics.Color.TRANSPARENT
+                            setShadowLayer(
+                                28.dp.toPx(),
+                                0f,
+                                -12.dp.toPx(),
+                                android.graphics.Color.argb((255 * 0.40f).toInt(), 0, 0, 0),
+                            )
+                        }
+                        canvas.nativeCanvas.drawRoundRect(
+                            0f, 0f, size.width, size.height,
+                            16.dp.toPx(), 16.dp.toPx(),
+                            shadowPaint,
+                        )
+                    }
+                } catch (_: Exception) {
+                }
+
+                // Top highlight: 2dp white 40%
+                drawLine(
+                    color = Color.White.copy(alpha = 0.40f),
+                    start = Offset(8.dp.toPx(), 1.dp.toPx()),
+                    end = Offset(size.width - 22.dp.toPx(), 1.dp.toPx()),
+                    strokeWidth = 2.dp.toPx(),
+                )
+            },
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (isFront) {
+                // Label "FOLDER 02 / 18": mono 12sp, spacing 0.14em, 65%, at (30, 30)
+                Text(
+                    text = "FOLDER ${String.format("%02d", index + 1)} / ${String.format("%02d", totalFolders)}",
+                    fontFamily = JetBrainsMono,
+                    fontSize = 12.sp,
+                    letterSpacing = 0.14.em,
+                    color = PrototypeInkPaper.copy(alpha = 0.65f),
+                    modifier = Modifier.offset(x = 30.dp, y = 30.dp),
+                )
+
+                // Title: left 30, top 62, bold 54sp, letter-spacing -1.5, max 2 lines, #1A150C
+                Text(
+                    text = folder.name,
+                    fontFamily = BricolageGrotesque,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 54.sp,
+                    lineHeight = 56.sp,
+                    letterSpacing = (-1.5).sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color(0xFF1A150C),
+                    modifier = Modifier
+                        .offset(x = 30.dp, y = 62.dp)
+                        .widthIn(max = 480.dp),
+                )
+
+                // Stamp: right 34, top 34, rotated -6
+                if (folder.newVideosCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.5.dp, PrototypeStamp),
+                        color = Color.Transparent,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(end = 34.dp, top = 34.dp)
+                            .graphicsLayer { rotationZ = -6f },
+                    ) {
+                        Text(
+                            text = "${folder.newVideosCount} NEW",
+                            fontFamily = JetBrainsMono,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrototypeStamp,
+                            letterSpacing = 0.12.em,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+
+                // "LAST PLAYED" mono 12sp spacing 0.14em, right 34, top 98 (last-played folder only)
+                if (isLastPlayed) {
+                    Text(
+                        text = "LAST PLAYED",
+                        fontFamily = JetBrainsMono,
+                        fontSize = 12.sp,
+                        letterSpacing = 0.14.em,
+                        color = PrototypeInkPaper.copy(alpha = 0.85f),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(end = 34.dp, top = 98.dp),
+                    )
+                }
+
+                // Meta (count + duration + path): left 32, top 196, right inset 360, mono 13sp, spacing 0.1em
+                Column(
+                    modifier = Modifier
+                        .offset(x = 32.dp, y = 196.dp)
+                        .width((820 - 32 - 360).dp),
+                ) {
+                    val metaText = remember(folder.videosCount, folder.totalDuration) {
+                        val countPart = "${folder.videosCount} ${if (folder.videosCount == 1) "VIDEO" else "VIDEOS"}"
+                        if (folder.totalDuration > 0) {
+                            "$countPart · ${Utils.formatDurationMillis(folder.totalDuration)}"
+                        } else {
+                            countPart
+                        }
+                    }
+                    Text(
+                        text = metaText,
+                        fontFamily = JetBrainsMono,
+                        fontSize = 13.sp,
+                        letterSpacing = 0.1.em,
+                        color = PrototypeInkPaper.copy(alpha = 0.80f),
+                    )
+                    if (folder.path.isNotEmpty()) {
+                        Text(
+                            text = folder.path,
+                            fontFamily = JetBrainsMono,
+                            fontSize = 11.sp,
+                            letterSpacing = 0.04.em,
+                            color = PrototypeInkPaper.copy(alpha = 0.60f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+
+                // 3 Overlapping Peek Thumbnails (keep current placeholders)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .offset(x = (-34).dp, y = 10.dp),
+                ) {
+                    for (k in 0..2) {
+                        val rot = (k - 1) * 4.5f
+                        val offsetX = (k * 26).dp
+                        val offsetY = (-k * 4).dp
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = PrototypeSurfaceDeep,
+                            border = BorderStroke(1.dp, PrototypeBorderInput),
+                            shadowElevation = 6.dp,
+                            modifier = Modifier
+                                .offset(x = offsetX, y = offsetY)
+                                .size(width = 108.dp, height = 61.dp)
+                                .graphicsLayer { rotationZ = rot },
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(PrototypeSurfaceKey, PrototypeSurfaceDeep),
+                                        ),
+                                    ),
+                            ) {
+                                Icon(
+                                    imageVector = NextIcons.Movie,
+                                    contentDescription = null,
+                                    tint = PrototypeInkDim.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Bars: bottom-left, max 26 bars, width 12, gap 5
+                val spineCount = remember(folder.videosCount) {
+                    minOf(maxOf(folder.videosCount, 6), 26)
+                }
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 32.dp, bottom = 28.dp),
+                ) {
+                    for (k in 0 until spineCount) {
+                        val barHeight = remember(index, k) {
+                            46.dp + (((index + 3) * 31 + k * 17) % 5).dp * 20
+                        }
+                        val isNew = k < folder.newVideosCount
+                        Box(
+                            modifier = Modifier
+                                .width(12.dp)
+                                .height(barHeight)
+                                .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                                .background(if (isNew) accent.color else Color(0xFF3A3220)),
+                        )
+                    }
+                    if (folder.videosCount > 26) {
+                        Text(
+                            text = "+${folder.videosCount - 26}",
+                            fontFamily = JetBrainsMono,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 0.06.em,
+                            color = PrototypeInkPaper,
+                            modifier = Modifier
+                                .align(Alignment.CenterVertically)
+                                .padding(start = 12.dp),
+                        )
+                    }
+                }
+
+                // Open folder key: right 30, bottom 28, height 56, radius 18
+                KeycapButton(
+                    onClick = onOpenFolder,
+                    isAccent = true,
+                    shape = RoundedCornerShape(18.dp),
+                    shadowHeight = 5.dp,
+                    contentPadding = PaddingValues(horizontal = 26.dp, vertical = 14.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 30.dp, bottom = 28.dp)
+                        .height(56.dp),
+                ) {
+                    Text(
+                        text = "Open folder →",
+                        fontFamily = BricolageGrotesque,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                    )
                 }
             }
 
-            Text(
-                text = metaText,
-                fontFamily = JetBrainsMono,
-                fontSize = if (isVeryShort) 10.sp else 11.5.sp,
-                color = PrototypeInkPaper.copy(alpha = 0.8f),
-                letterSpacing = 0.08.em,
-                modifier = Modifier.padding(top = if (isVeryShort) 2.dp else 4.dp),
-            )
-
-            if (folder.path.isNotEmpty() && !isVeryShort) {
-                Text(
-                    text = folder.path,
-                    fontFamily = JetBrainsMono,
-                    fontSize = 10.sp,
-                    color = PrototypeInkPaper.copy(alpha = 0.55f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
+            // Darkening falloff with depth (prototype brightness filter)
+            if (brightness < 0.98f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = (1f - brightness) * 0.65f)),
                 )
             }
         }
+    }
+}
 
-        // 3 Overlapping Peek Thumbnails (shown when ample space is available)
-        if (showPeekCards) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .offset(x = (-12).dp, y = (-8).dp),
-            ) {
-                for (k in 0..2) {
-                    val rot = (k - 1) * 4.5f
-                    val offsetX = (k * 24).dp
-                    val offsetY = (-k * 4).dp
+/**
+ * PORTRAIT DESIGN (344 x 220)
+ * All dimensions below are EXACT DESIGN VALUES in dp / sp.
+ */
+@Composable
+private fun PortraitCardContent(
+    folder: Folder,
+    index: Int,
+    totalFolders: Int,
+    isFront: Boolean,
+    isLastPlayed: Boolean,
+    paperColor: Color,
+    tabBg: Color,
+    brightness: Float,
+    onTabClick: () -> Unit,
+    onBodyClick: () -> Unit,
+    onOpenFolder: () -> Unit,
+) {
+    val accent = LocalAppAccent.current
+
+    // Slots: index%3 -> 16, 84, 152 (tab must stay inside the card width)
+    val tabSlotLeft = when (index % 3) {
+        0 -> 16.dp
+        1 -> 84.dp
+        else -> 152.dp
+    }
+
+    // Card radii: TL 4, TR 12, BR 10, BL 10
+    val cardShape = RoundedCornerShape(
+        topStart = 4.dp,
+        topEnd = 12.dp,
+        bottomEnd = 10.dp,
+        bottomStart = 10.dp,
+    )
+
+    // 1. Tab: 156 x 31, sits 30 above card edge, top corners 12, padding 8 top / 11 sides
+    Surface(
+        onClick = onTabClick,
+        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp, bottomStart = 0.dp, bottomEnd = 0.dp),
+        color = tabBg,
+        shadowElevation = 3.dp,
+        modifier = Modifier
+            .offset(x = tabSlotLeft, y = (-30).dp)
+            .size(width = 156.dp, height = 31.dp)
+            .drawBehind {
+                drawLine(
+                    color = Color.White.copy(alpha = 0.35f),
+                    start = Offset(10.dp.toPx(), 1.dp.toPx()),
+                    end = Offset(size.width - 10.dp.toPx(), 1.dp.toPx()),
+                    strokeWidth = 1.dp.toPx(),
+                )
+            },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 11.dp, end = 11.dp, top = 8.dp),
+        ) {
+            Text(
+                text = String.format("%02d", index + 1),
+                fontFamily = JetBrainsMono,
+                fontSize = 10.sp,
+                color = PrototypeInkPaper.copy(alpha = 0.70f),
+            )
+            Text(
+                text = folder.name,
+                fontFamily = BricolageGrotesque,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+                color = PrototypeInkPaper,
+            )
+            Text(
+                text = folder.videosCount.toString(),
+                fontFamily = JetBrainsMono,
+                fontSize = 10.sp,
+                color = PrototypeInkPaper,
+            )
+        }
+    }
+
+    // 2. Card Body: 344 x 220, top highlight 1.5dp white 45%, shadow y -9 blur 24 black 50%
+    Surface(
+        onClick = onBodyClick,
+        shape = cardShape,
+        color = paperColor,
+        shadowElevation = 5.dp,
+        modifier = Modifier
+            .size(width = 344.dp, height = 220.dp)
+            .drawBehind {
+                try {
+                    drawIntoCanvas { canvas ->
+                        val shadowPaint = Paint().asFrameworkPaint().apply {
+                            color = android.graphics.Color.TRANSPARENT
+                            setShadowLayer(
+                                24.dp.toPx(),
+                                0f,
+                                -9.dp.toPx(),
+                                android.graphics.Color.argb((255 * 0.50f).toInt(), 0, 0, 0),
+                            )
+                        }
+                        canvas.nativeCanvas.drawRoundRect(
+                            0f, 0f, size.width, size.height,
+                            10.dp.toPx(), 10.dp.toPx(),
+                            shadowPaint,
+                        )
+                    }
+                } catch (_: Exception) {
+                }
+
+                // Top highlight: 1.5dp white 45%
+                drawLine(
+                    color = Color.White.copy(alpha = 0.45f),
+                    start = Offset(6.dp.toPx(), 1.dp.toPx()),
+                    end = Offset(size.width - 14.dp.toPx(), 1.dp.toPx()),
+                    strokeWidth = 1.5.dp.toPx(),
+                )
+            },
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (isFront) {
+                // Label: mono 10.5sp, spacing 0.17em, 58%, at (16, 11)
+                Text(
+                    text = "FOLDER ${String.format("%02d", index + 1)} / ${String.format("%02d", totalFolders)}",
+                    fontFamily = JetBrainsMono,
+                    fontSize = 10.5.sp,
+                    letterSpacing = 0.17.em,
+                    color = PrototypeInkPaper.copy(alpha = 0.58f),
+                    modifier = Modifier.offset(x = 16.dp, y = 11.dp),
+                )
+
+                // Stamp: right 16, top 10, 2dp border, radius 5, mono 10.5sp
+                if (folder.newVideosCount > 0) {
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = PrototypeSurfaceDeep,
-                        border = BorderStroke(1.dp, PrototypeBorderInput),
-                        shadowElevation = 6.dp,
+                        shape = RoundedCornerShape(5.dp),
+                        border = BorderStroke(2.dp, PrototypeStamp),
+                        color = Color.Transparent,
                         modifier = Modifier
-                            .offset(x = offsetX, y = offsetY)
-                            .size(width = 100.dp, height = 56.dp)
-                            .graphicsLayer { rotationZ = rot },
+                            .align(Alignment.TopEnd)
+                            .padding(end = 16.dp, top = 10.dp)
+                            .graphicsLayer { rotationZ = -6f },
                     ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(
-                                            PrototypeSurfaceKey,
-                                            PrototypeSurfaceDeep,
-                                        ),
-                                    ),
-                                ),
-                        ) {
-                            Icon(
-                                imageVector = NextIcons.Movie,
-                                contentDescription = null,
-                                tint = PrototypeInkDim.copy(alpha = 0.6f),
-                                modifier = Modifier.size(18.dp),
+                        Text(
+                            text = "${folder.newVideosCount} NEW",
+                            fontFamily = JetBrainsMono,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrototypeStamp,
+                            letterSpacing = 0.12.em,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+
+                // Title: top 34, left 18, bold 40sp (33sp if name > 12 chars, 27sp if > 18), letter-spacing -1.3, ONE line ellipsis
+                val titleSize = when {
+                    folder.name.length > 18 -> 27.sp
+                    folder.name.length > 12 -> 33.sp
+                    else -> 40.sp
+                }
+                Text(
+                    text = folder.name,
+                    fontFamily = BricolageGrotesque,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = titleSize,
+                    letterSpacing = (-1.3).sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color(0xFF1A150C),
+                    modifier = Modifier
+                        .offset(x = 18.dp, y = 34.dp)
+                        .widthIn(max = (344 - 36).dp),
+                )
+
+                // Meta row 9 below title: left count+duration mono 11sp (path 9sp under it); right 14 bars, width 5, gap 3, max height 26
+                Row(
+                    modifier = Modifier
+                        .offset(x = 18.dp, y = 83.dp)
+                        .width((344 - 36).dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Left: count + duration (path 9sp under it)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .padding(end = 8.dp),
+                    ) {
+                        val metaText = remember(folder.videosCount, folder.totalDuration) {
+                            val countPart = "${folder.videosCount} ${if (folder.videosCount == 1) "VIDEO" else "VIDEOS"}"
+                            if (folder.totalDuration > 0) {
+                                "$countPart · ${Utils.formatDurationMillis(folder.totalDuration)}"
+                            } else {
+                                countPart
+                            }
+                        }
+                        Text(
+                            text = metaText,
+                            fontFamily = JetBrainsMono,
+                            fontSize = 11.sp,
+                            color = PrototypeInkPaper.copy(alpha = 0.85f),
+                            letterSpacing = 0.08.em,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (folder.path.isNotEmpty()) {
+                            Text(
+                                text = folder.path,
+                                fontFamily = JetBrainsMono,
+                                fontSize = 9.sp,
+                                color = PrototypeInkPaper.copy(alpha = 0.55f),
+                                letterSpacing = 0.04.em,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
+
+                    // Right: 14 bars, width 5, gap 3, max height 26
+                    val spineCount = remember(folder.videosCount) {
+                        minOf(maxOf(folder.videosCount, 6), 14)
+                    }
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier.height(26.dp),
+                    ) {
+                        for (k in 0 until spineCount) {
+                            val barHeight = remember(index, k) {
+                                (12.dp + (((index + 3) * 31 + k * 17) % 5).dp * 3.5f).coerceAtMost(26.dp)
+                            }
+                            val isNew = k < folder.newVideosCount
+                            Box(
+                                modifier = Modifier
+                                    .width(5.dp)
+                                    .height(barHeight)
+                                    .clip(RoundedCornerShape(topStart = 1.5.dp, topEnd = 1.5.dp))
+                                    .background(if (isNew) accent.color else Color(0xFF3A3220)),
                             )
                         }
                     }
                 }
-            }
-        }
 
-        // Waveform spine bars along bottom-left (scaled with cardHeight, hidden on small cards)
-        if (showWaveform) {
-            val maxBarHeight = (cardHeight * 0.17f).coerceIn(20.dp, 52.dp)
-            val barWidth = if (cardWidth < 380.dp) 5.dp else 7.dp
-            val barSpacing = if (cardWidth < 380.dp) 3.dp else 4.dp
-            val spineLimit = if (cardWidth < 420.dp) 12 else 22
-            val spineCount = remember(folder.videosCount, spineLimit) {
-                minOf(maxOf(folder.videosCount, 6), spineLimit)
-            }
-
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(barSpacing),
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(bottom = 2.dp),
-            ) {
-                for (k in 0 until spineCount) {
-                    val barHeight = remember(index, k, maxBarHeight) {
-                        maxBarHeight * (0.42f + (((index + 3) * 31 + k * 17) % 5) * 0.14f)
-                    }
-                    val isNew = k < folder.newVideosCount
+                // Bottom row (padding bottom 16, sides 18): thumbnails group 170 x 56 on the left (keep current placeholders), "Open folder" key weight 1, height 48, radius 15
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(start = 18.dp, end = 18.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Thumbnails group 170 x 56 on the left (keep current placeholders)
                     Box(
+                        modifier = Modifier.size(width = 170.dp, height = 56.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        for (k in 0..2) {
+                            val rot = (k - 1) * 4.5f
+                            val offsetX = (k * 22).dp
+                            val offsetY = (-k * 3).dp
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = PrototypeSurfaceDeep,
+                                border = BorderStroke(1.dp, PrototypeBorderInput),
+                                shadowElevation = 4.dp,
+                                modifier = Modifier
+                                    .offset(x = offsetX, y = offsetY)
+                                    .size(width = 84.dp, height = 48.dp)
+                                    .graphicsLayer { rotationZ = rot },
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.linearGradient(
+                                                listOf(PrototypeSurfaceKey, PrototypeSurfaceDeep),
+                                            ),
+                                        ),
+                                    ) {
+                                        Icon(
+                                            imageVector = NextIcons.Movie,
+                                            contentDescription = null,
+                                            tint = PrototypeInkDim.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                            }
+                        }
+                    }
+
+                    // "Open folder" key weight 1, height 48, radius 15
+                    KeycapButton(
+                        onClick = onOpenFolder,
+                        isAccent = true,
+                        shape = RoundedCornerShape(15.dp),
+                        shadowHeight = 4.dp,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         modifier = Modifier
-                            .width(barWidth)
-                            .height(barHeight)
-                            .clip(RoundedCornerShape(topStart = 2.5.dp, topEnd = 2.5.dp))
-                            .background(if (isNew) accent.color else PrototypeBorderInput),
-                    )
-                }
-                if (folder.videosCount > spineLimit) {
-                    Text(
-                        text = "+${folder.videosCount - spineLimit}",
-                        fontFamily = JetBrainsMono,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = PrototypeInkPaper.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(start = 3.dp, bottom = 2.dp),
-                    )
+                            .weight(1f)
+                            .height(48.dp),
+                    ) {
+                        Text(
+                            text = "Open folder →",
+                            fontFamily = BricolageGrotesque,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
-        }
 
-        // Tactile "Open folder →" KeycapButton on bottom-right (scaled for compact cards)
-        KeycapButton(
-            onClick = onOpenFolder,
-            isAccent = true,
-            shape = RoundedCornerShape(if (isCompact) 12.dp else 16.dp),
-            shadowHeight = if (isCompact) 3.5.dp else 5.dp,
-            contentPadding = if (isCompact) {
-                PaddingValues(horizontal = 14.dp, vertical = 7.dp)
-            } else {
-                PaddingValues(horizontal = 20.dp, vertical = 12.dp)
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .offset(y = 2.dp),
-        ) {
-            Text(
-                text = "Open folder →",
-                fontFamily = BricolageGrotesque,
-                fontWeight = FontWeight.Bold,
-                fontSize = if (isCompact) 11.5.sp else 13.sp,
-            )
+            // Darkening falloff with depth (prototype brightness filter)
+            if (brightness < 0.98f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = (1f - brightness) * 0.65f)),
+                )
+            }
         }
     }
 }
