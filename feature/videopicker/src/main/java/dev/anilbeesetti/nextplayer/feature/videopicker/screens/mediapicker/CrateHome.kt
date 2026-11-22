@@ -529,7 +529,7 @@ private fun FrontCardFace(
                                 ),
                         ) {
                             Icon(
-                                imageVector = NextIcons.LocalMovies,
+                                imageVector = NextIcons.Movie,
                                 contentDescription = null,
                                 tint = PrototypeInkDim.copy(alpha = 0.6f),
                                 modifier = Modifier.size(18.dp),
