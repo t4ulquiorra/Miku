@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,6 +45,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -134,31 +138,66 @@ fun CrateHome(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(PrototypeBg)
-            .padding(contentPadding),
+            .background(PrototypeBg),
     ) {
         val density = LocalDensity.current.density
-        val viewportWidth = maxWidth
-        val viewportHeight = maxHeight
+        val layoutDirection = LocalLayoutDirection.current
 
-        // Responsive card dimensions adapting to mobile and tablet screen widths
-        val cardWidth = remember(viewportWidth) {
-            (viewportWidth - 92.dp).coerceIn(280.dp, 820.dp)
-        }
-        val cardHeight = remember(cardWidth) {
-            (cardWidth * 0.5f).coerceIn(220.dp, 410.dp)
-        }
-        val tabWidth = remember(cardWidth) {
-            (cardWidth * 0.30f).coerceIn(120.dp, 248.dp)
-        }
-        val tabHeight = 36.dp
+        val containerWidth = maxWidth
+        val containerHeight = maxHeight
 
-        // Stack center positioning (approx 42% from top matching prototype)
-        val stackCenterY = remember(viewportHeight) {
-            viewportHeight * 0.42f
-        }
+        val bottomPadding = contentPadding.calculateBottomPadding()
+        val startContentPadding = contentPadding.calculateStartPadding(layoutDirection)
+        val endContentPadding = contentPadding.calculateEndPadding(layoutDirection)
+        val topContentPadding = contentPadding.calculateTopPadding()
 
-        // Limit composition to ~8 cards around current animated position
+        // 1. Reserved zones
+        val reservedRightColumnWidth = 72.dp
+        val hintLineHeight = 30.dp
+        val hintLineBottomMargin = 8.dp
+        val bottomReserved = bottomPadding + hintLineHeight + hintLineBottomMargin
+        val topReserved = topContentPadding + 10.dp
+
+        // 2. Stack available area (bounded horizontally and vertically)
+        val availableStackWidth = (containerWidth - reservedRightColumnWidth - startContentPadding - endContentPadding - 16.dp)
+            .coerceAtLeast(180.dp)
+        val availableStackHeight = (containerHeight - bottomReserved - topReserved)
+            .coerceAtLeast(160.dp)
+
+        // 3. Tab rise above front card
+        val tabHeight = (availableStackHeight * 0.11f).coerceIn(26.dp, 36.dp)
+        val visibleCardsBehind = minOf(folders.lastIndex, 4)
+        val stepY = if (visibleCardsBehind > 0) {
+            (availableStackHeight * 0.05f).coerceIn(7.dp, 22.dp)
+        } else {
+            0.dp
+        }
+        val tabRise = tabHeight + (stepY * visibleCardsBehind)
+
+        // 4. Derive card width and height (height wins: if card would not fit, shrink it)
+        val maxCardHeight = (availableStackHeight - tabRise).coerceAtLeast(140.dp)
+        val targetAspect = if (availableStackWidth >= 540.dp) 2.0f else 1.45f
+
+        val candidateWidth = minOf(availableStackWidth, 820.dp)
+        val candidateHeight = candidateWidth / targetAspect
+
+        val cardHeight = minOf(candidateHeight, maxCardHeight)
+        val cardWidth = minOf(candidateWidth, cardHeight * targetAspect)
+
+        val tabWidth = (cardWidth * 0.32f).coerceIn(88.dp, 240.dp)
+
+        // 5. Vertical positioning of the front card
+        val unusedHeight = (availableStackHeight - (cardHeight + tabRise)).coerceAtLeast(0.dp)
+        val frontCardTopY = topReserved + tabRise + (unusedHeight * 0.35f)
+
+        // 6. Horizontal positioning: center in availableStackWidth, reserve right column
+        val stackAreaStartX = startContentPadding + 8.dp
+        val stackCenterX = stackAreaStartX + (availableStackWidth / 2f)
+        val nominalCardHalfWidth = cardWidth / 2f
+        val maxRightLeeway = (stackAreaStartX + availableStackWidth) - (stackCenterX + nominalCardHalfWidth)
+        val maxAllowedShiftX = maxRightLeeway.coerceAtLeast(0.dp)
+
+        // 7. Limit composition to ~8 cards around current animated position
         val centerIndex = animatedPos.roundToInt().coerceIn(0, folders.lastIndex)
         val minVisible = (centerIndex - 2).coerceAtLeast(0)
         val maxVisible = (centerIndex + 5).coerceAtMost(folders.lastIndex)
@@ -168,7 +207,7 @@ fun CrateHome(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { clip = false },
-            contentAlignment = Alignment.TopCenter,
+            contentAlignment = Alignment.TopStart,
         ) {
             for (idx in maxVisible downTo minVisible) {
                 val folder = folders[idx]
@@ -183,7 +222,10 @@ fun CrateHome(
                         cardHeight = cardHeight,
                         tabWidth = tabWidth,
                         tabHeight = tabHeight,
-                        stackCenterY = stackCenterY,
+                        frontCardTopY = frontCardTopY,
+                        stackCenterX = stackCenterX,
+                        stepY = stepY,
+                        maxAllowedShiftX = maxAllowedShiftX,
                         onTabClick = { targetIndex = idx },
                         onBodyClick = {
                             if (safeTarget == idx) {
@@ -198,13 +240,14 @@ fun CrateHome(
             }
         }
 
-        // Right-Edge Stepper with Up/Down Chevrons and Counter
+        // Right-Edge Stepper with Up/Down Chevrons and Counter (reserved 72dp column)
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.Center,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .padding(end = 16.dp)
+                .width(reservedRightColumnWidth)
+                .padding(end = endContentPadding + 4.dp)
                 .zIndex(2000f),
         ) {
             StepperChevronButton(
@@ -214,21 +257,21 @@ fun CrateHome(
                     if (safeTarget > 0) targetIndex = safeTarget - 1
                 },
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = String.format("%02d", (animatedPos.roundToInt() + 1).coerceIn(1, folders.size)),
                 fontFamily = JetBrainsMono,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
                 color = PrototypeInk,
-                modifier = Modifier.padding(top = 4.dp),
             )
             Text(
                 text = "/ ${String.format("%02d", folders.size)}",
                 fontFamily = JetBrainsMono,
                 fontSize = 11.sp,
                 color = PrototypeInkMuted,
-                modifier = Modifier.padding(bottom = 4.dp),
             )
+            Spacer(modifier = Modifier.height(4.dp))
             StepperChevronButton(
                 isUp = false,
                 enabled = safeTarget < folders.lastIndex,
@@ -238,16 +281,23 @@ fun CrateHome(
             )
         }
 
-        // Bottom-left subtle interaction cue from prototype
-        MonoLabel(
-            text = "TAP TAB TO SELECT · CHEVRONS TO FLIP",
-            color = PrototypeInkDim,
-            fontSize = 10.5.sp,
-            letterSpacing = 0.14.em,
+        // Bottom-left subtle interaction cue from prototype (own line outside card area)
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 24.dp, bottom = 20.dp),
-        )
+                .padding(
+                    start = startContentPadding + 20.dp,
+                    bottom = bottomPadding + hintLineBottomMargin,
+                )
+                .zIndex(1500f),
+        ) {
+            MonoLabel(
+                text = "TAP TAB TO SELECT · CHEVRONS TO FLIP",
+                color = PrototypeInkDim,
+                fontSize = 10.5.sp,
+                letterSpacing = 0.14.em,
+            )
+        }
     }
 }
 
@@ -262,7 +312,10 @@ private fun CrateFolderCard(
     cardHeight: Dp,
     tabWidth: Dp,
     tabHeight: Dp,
-    stackCenterY: Dp,
+    frontCardTopY: Dp,
+    stackCenterX: Dp,
+    stepY: Dp,
+    maxAllowedShiftX: Dp,
     onTabClick: () -> Unit,
     onBodyClick: () -> Unit,
     onOpenFolder: () -> Unit,
@@ -273,12 +326,13 @@ private fun CrateFolderCard(
 
     val paperColor = PAPERS[index % PAPERS.size]
     val tabFraction = TAB_SLOTS_FRACTION[index % TAB_SLOTS_FRACTION.size]
-    val tabOffsetStart = (cardWidth - tabWidth - 20.dp) * tabFraction + 10.dp
+    val tabOffsetStart = (cardWidth - tabWidth - 16.dp) * tabFraction + 8.dp
 
     // 3D Transform calculations matching updateCrateTransforms in prototype.html
     val org = ORGANIC_OFFSETS[index % ORGANIC_OFFSETS.size]
     val ease = if (d > 0f) (d * 1.1f).coerceAtMost(1f) else 0f
-    val tx = org.x * ease * (cardWidth.value / 820f).coerceIn(0.5f, 1f)
+    val rawTx = org.x * ease * (cardWidth.value / 820f).coerceIn(0.2f, 1f)
+    val tx = rawTx.coerceIn(-maxAllowedShiftX.value, maxAllowedShiftX.value)
     val rz = org.rz * ease
 
     val ty: Float
@@ -287,12 +341,12 @@ private fun CrateFolderCard(
     val scale: Float
 
     if (d >= 0f) {
-        ty = -d * 42f * density
+        ty = -d * stepY.value * density
         scale = (1f - d * 0.035f).coerceIn(0.6f, 1f)
         rx = 5f
         alpha = if (d > 3.5f) (1f - (d - 3.5f) * 0.34f).coerceIn(0f, 1f) else 1f
     } else {
-        ty = -d * 280f * density
+        ty = -d * (stepY.value * 6f) * density
         scale = (1f - d * 0.08f).coerceIn(0.6f, 1.2f)
         rx = d * 25f
         alpha = (1f + d * 1.05f).coerceIn(0f, 1f)
@@ -301,9 +355,11 @@ private fun CrateFolderCard(
     val zIndex = 1000f - d * 10f
     val brightness = (1f - d.coerceAtLeast(0f) * 0.08f).coerceIn(0.45f, 1f)
 
+    val cardLeft = stackCenterX - (cardWidth / 2f)
+
     Box(
         modifier = modifier
-            .offset(y = stackCenterY)
+            .offset(x = cardLeft, y = frontCardTopY)
             .size(width = cardWidth, height = cardHeight)
             .zIndex(zIndex)
             .graphicsLayer {
@@ -320,7 +376,7 @@ private fun CrateFolderCard(
         // 1. Top Folder Tab
         Surface(
             onClick = onTabClick,
-            shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+            shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp),
             color = paperColor,
             shadowElevation = 3.dp,
             modifier = Modifier
@@ -329,22 +385,22 @@ private fun CrateFolderCard(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = if (cardWidth < 360.dp) 8.dp else 12.dp, vertical = 4.dp),
             ) {
                 Text(
                     text = String.format("%02d", index + 1),
                     fontFamily = JetBrainsMono,
-                    fontSize = 11.sp,
+                    fontSize = if (cardHeight < 240.dp) 10.sp else 11.sp,
                     color = PrototypeInkPaper.copy(alpha = 0.7f),
                 )
                 Text(
                     text = folder.name,
                     fontFamily = BricolageGrotesque,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
+                    fontSize = if (cardHeight < 240.dp) 11.5.sp else 13.sp,
                     color = PrototypeInkPaper,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -354,7 +410,7 @@ private fun CrateFolderCard(
                     text = folder.videosCount.toString(),
                     fontFamily = JetBrainsMono,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
+                    fontSize = if (cardHeight < 240.dp) 10.sp else 11.sp,
                     color = PrototypeInkPaper,
                 )
             }
@@ -365,7 +421,7 @@ private fun CrateFolderCard(
             onClick = onBodyClick,
             shape = RoundedCornerShape(
                 topStart = 6.dp,
-                topEnd = 20.dp,
+                topEnd = 18.dp,
                 bottomEnd = 16.dp,
                 bottomStart = 16.dp,
             ),
@@ -380,6 +436,7 @@ private fun CrateFolderCard(
                         index = index,
                         totalFolders = totalFolders,
                         cardWidth = cardWidth,
+                        cardHeight = cardHeight,
                         onOpenFolder = onOpenFolder,
                     )
                 }
@@ -403,14 +460,37 @@ private fun FrontCardFace(
     index: Int,
     totalFolders: Int,
     cardWidth: Dp,
+    cardHeight: Dp,
     onOpenFolder: () -> Unit,
 ) {
     val accent = LocalAppAccent.current
 
+    val isCompact = cardHeight < 240.dp
+    val isVeryShort = cardHeight < 190.dp
+    val showWaveform = cardHeight >= 225.dp
+    val showPeekCards = cardWidth > 580.dp && cardHeight >= 260.dp
+
+    val hPadding = if (cardWidth > 480.dp) 24.dp else 16.dp
+    val vPadding = if (cardHeight > 280.dp) 18.dp else if (cardHeight > 210.dp) 12.dp else 8.dp
+
+    val titleFontSize = when {
+        cardHeight >= 340.dp -> 36.sp
+        cardHeight >= 250.dp -> 26.sp
+        cardHeight >= 200.dp -> 20.sp
+        else -> 17.sp
+    }
+    val titleLineHeight = when {
+        cardHeight >= 340.dp -> 38.sp
+        cardHeight >= 250.dp -> 28.sp
+        cardHeight >= 200.dp -> 22.sp
+        else -> 19.sp
+    }
+    val titleMaxLines = if (cardHeight >= 220.dp) 2 else 1
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 20.dp),
+            .padding(horizontal = hPadding, vertical = vPadding),
     ) {
         // Top row: "FOLDER 02 / 18" and "N NEW" stamp
         Row(
@@ -421,45 +501,49 @@ private fun FrontCardFace(
             MonoLabel(
                 text = "FOLDER ${String.format("%02d", index + 1)} / ${String.format("%02d", totalFolders)}",
                 color = PrototypeInkPaper.copy(alpha = 0.65f),
-                fontSize = 11.sp,
-                letterSpacing = 0.14.em,
+                fontSize = if (isVeryShort) 9.5.sp else 11.sp,
+                letterSpacing = 0.12.em,
             )
 
             if (folder.newVideosCount > 0) {
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(1.5.dp, PrototypeStamp),
+                    shape = RoundedCornerShape(if (isCompact) 4.dp else 6.dp),
+                    border = BorderStroke(if (isCompact) 1.dp else 1.5.dp, PrototypeStamp),
                     color = Color.Transparent,
                     modifier = Modifier.graphicsLayer { rotationZ = -6f },
                 ) {
                     Text(
                         text = "${folder.newVideosCount} NEW",
                         fontFamily = JetBrainsMono,
-                        fontSize = 11.sp,
+                        fontSize = if (isVeryShort) 9.sp else 10.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = PrototypeStamp,
                         letterSpacing = 0.12.em,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        modifier = Modifier.padding(
+                            horizontal = if (isVeryShort) 5.dp else 7.dp,
+                            vertical = if (isVeryShort) 1.5.dp else 2.5.dp,
+                        ),
                     )
                 }
             }
         }
 
         // Folder Title, Metadata, and Path
+        val topTextPadding = if (cardHeight > 280.dp) 28.dp else if (cardHeight > 210.dp) 18.dp else 12.dp
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(top = 30.dp)
-                .fillMaxWidth(if (cardWidth > 540.dp) 0.65f else 0.95f),
+                .padding(top = topTextPadding)
+                .fillMaxWidth(if (showPeekCards) 0.62f else 0.95f),
         ) {
             Text(
                 text = folder.name,
                 fontFamily = BricolageGrotesque,
                 fontWeight = FontWeight.Bold,
-                fontSize = if (cardWidth > 500.dp) 40.sp else 26.sp,
-                lineHeight = if (cardWidth > 500.dp) 42.sp else 28.sp,
+                fontSize = titleFontSize,
+                lineHeight = titleLineHeight,
                 color = PrototypeInkPaper,
-                maxLines = 2,
+                maxLines = titleMaxLines,
                 overflow = TextOverflow.Ellipsis,
             )
 
@@ -475,35 +559,35 @@ private fun FrontCardFace(
             Text(
                 text = metaText,
                 fontFamily = JetBrainsMono,
-                fontSize = 12.sp,
+                fontSize = if (isVeryShort) 10.sp else 11.5.sp,
                 color = PrototypeInkPaper.copy(alpha = 0.8f),
                 letterSpacing = 0.08.em,
-                modifier = Modifier.padding(top = 8.dp),
+                modifier = Modifier.padding(top = if (isVeryShort) 2.dp else 4.dp),
             )
 
-            if (folder.path.isNotEmpty()) {
+            if (folder.path.isNotEmpty() && !isVeryShort) {
                 Text(
                     text = folder.path,
                     fontFamily = JetBrainsMono,
-                    fontSize = 10.5.sp,
+                    fontSize = 10.sp,
                     color = PrototypeInkPaper.copy(alpha = 0.55f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
 
         // 3 Overlapping Peek Thumbnails (shown when ample space is available)
-        if (cardWidth > 560.dp) {
+        if (showPeekCards) {
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .offset(x = (-12).dp, y = (-10).dp),
+                    .offset(x = (-12).dp, y = (-8).dp),
             ) {
                 for (k in 0..2) {
                     val rot = (k - 1) * 4.5f
-                    val offsetX = (k * 26).dp
+                    val offsetX = (k * 24).dp
                     val offsetY = (-k * 4).dp
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -512,7 +596,7 @@ private fun FrontCardFace(
                         shadowElevation = 6.dp,
                         modifier = Modifier
                             .offset(x = offsetX, y = offsetY)
-                            .size(width = 108.dp, height = 61.dp)
+                            .size(width = 100.dp, height = 56.dp)
                             .graphicsLayer { rotationZ = rot },
                     ) {
                         Box(
@@ -540,51 +624,71 @@ private fun FrontCardFace(
             }
         }
 
-        // Waveform spine bars along bottom-left
-        val spineCount = remember(folder.videosCount) {
-            minOf(maxOf(folder.videosCount, 6), 22)
-        }
-        Row(
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(bottom = 6.dp),
-        ) {
-            for (k in 0 until spineCount) {
-                val barHeight = remember(index, k) {
-                    20.dp + (((index + 3) * 31 + k * 17) % 5).dp * 7
-                }
-                val isNew = k < folder.newVideosCount
-                Box(
-                    modifier = Modifier
-                        .width(7.dp)
-                        .height(barHeight)
-                        .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                        .background(if (isNew) accent.color else PrototypeBorderInput),
-                )
+        // Waveform spine bars along bottom-left (scaled with cardHeight, hidden on small cards)
+        if (showWaveform) {
+            val maxBarHeight = (cardHeight * 0.17f).coerceIn(20.dp, 52.dp)
+            val barWidth = if (cardWidth < 380.dp) 5.dp else 7.dp
+            val barSpacing = if (cardWidth < 380.dp) 3.dp else 4.dp
+            val spineLimit = if (cardWidth < 420.dp) 12 else 22
+            val spineCount = remember(folder.videosCount, spineLimit) {
+                minOf(maxOf(folder.videosCount, 6), spineLimit)
             }
-            if (folder.videosCount > 22) {
-                Text(
-                    text = "+${folder.videosCount - 22}",
-                    fontFamily = JetBrainsMono,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = PrototypeInkPaper.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
-                )
+
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(barSpacing),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(bottom = 2.dp),
+            ) {
+                for (k in 0 until spineCount) {
+                    val barHeight = remember(index, k, maxBarHeight) {
+                        maxBarHeight * (0.42f + (((index + 3) * 31 + k * 17) % 5) * 0.14f)
+                    }
+                    val isNew = k < folder.newVideosCount
+                    Box(
+                        modifier = Modifier
+                            .width(barWidth)
+                            .height(barHeight)
+                            .clip(RoundedCornerShape(topStart = 2.5.dp, topEnd = 2.5.dp))
+                            .background(if (isNew) accent.color else PrototypeBorderInput),
+                    )
+                }
+                if (folder.videosCount > spineLimit) {
+                    Text(
+                        text = "+${folder.videosCount - spineLimit}",
+                        fontFamily = JetBrainsMono,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = PrototypeInkPaper.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(start = 3.dp, bottom = 2.dp),
+                    )
+                }
             }
         }
 
-        // Tactile "Open folder →" KeycapButton on bottom-right
+        // Tactile "Open folder →" KeycapButton on bottom-right (scaled for compact cards)
         KeycapButton(
-            text = "Open folder →",
-            isAccent = true,
             onClick = onOpenFolder,
+            isAccent = true,
+            shape = RoundedCornerShape(if (isCompact) 12.dp else 16.dp),
+            shadowHeight = if (isCompact) 3.5.dp else 5.dp,
+            contentPadding = if (isCompact) {
+                PaddingValues(horizontal = 14.dp, vertical = 7.dp)
+            } else {
+                PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+            },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .offset(y = 4.dp),
-        )
+                .offset(y = 2.dp),
+        ) {
+            Text(
+                text = "Open folder →",
+                fontFamily = BricolageGrotesque,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (isCompact) 11.5.sp else 13.sp,
+            )
+        }
     }
 }
 
@@ -602,10 +706,10 @@ private fun StepperChevronButton(
         color = PrototypeSurface,
         border = BorderStroke(1.dp, PrototypeBorderStrong),
         shadowElevation = 2.dp,
-        modifier = modifier.size(46.dp),
+        modifier = modifier.size(44.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Canvas(modifier = Modifier.size(18.dp)) {
+            Canvas(modifier = Modifier.size(16.dp)) {
                 val strokeWidth = 2.dp.toPx()
                 val color = if (enabled) PrototypeInk else PrototypeInkDim
                 val path = Path().apply {
