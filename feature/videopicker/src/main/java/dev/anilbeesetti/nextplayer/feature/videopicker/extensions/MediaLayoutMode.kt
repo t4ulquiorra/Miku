@@ -9,4 +9,5 @@ import dev.anilbeesetti.nextplayer.core.ui.R
 fun MediaLayoutMode.name(): String = when (this) {
     MediaLayoutMode.LIST -> stringResource(id = R.string.list)
     MediaLayoutMode.GRID -> stringResource(id = R.string.grid)
+    MediaLayoutMode.CRATE -> "Crate 3D"
 }

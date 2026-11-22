@@ -73,7 +73,8 @@ fun FolderItem(
             onLongClick = onLongClick,
         )
 
-        MediaLayoutMode.GRID -> FolderGridItem(
+        MediaLayoutMode.GRID,
+        MediaLayoutMode.CRATE -> FolderGridItem(
             folder = folder,
             isRecentlyPlayedFolder = isRecentlyPlayedFolder,
             preferences = preferences,

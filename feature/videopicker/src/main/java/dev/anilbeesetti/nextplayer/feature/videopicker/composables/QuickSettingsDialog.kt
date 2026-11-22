@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.anilbeesetti.nextplayer.core.model.ApplicationPreferences
+import dev.anilbeesetti.nextplayer.core.model.MediaLayoutMode
 import dev.anilbeesetti.nextplayer.core.model.MediaViewMode
 import dev.anilbeesetti.nextplayer.core.model.Sort
 import dev.anilbeesetti.nextplayer.core.ui.R
@@ -53,7 +54,17 @@ fun QuickSettingsDialog(
     onDismiss: () -> Unit,
     updatePreferences: (ApplicationPreferences) -> Unit,
 ) {
-    var preferences by remember { mutableStateOf(value = applicationPreferences) }
+    var preferences by remember {
+        mutableStateOf(
+            value = if (applicationPreferences.mediaViewMode != MediaViewMode.FOLDERS &&
+                applicationPreferences.mediaLayoutMode == MediaLayoutMode.CRATE
+            ) {
+                applicationPreferences.copy(mediaLayoutMode = MediaLayoutMode.GRID)
+            } else {
+                applicationPreferences
+            },
+        )
+    }
 
     NextDialog(
         onDismissRequest = onDismiss,
@@ -70,7 +81,26 @@ fun QuickSettingsDialog(
                     MediaViewMode.entries.forEachIndexed { index, viewMode ->
                         SegmentedButton(
                             selected = preferences.mediaViewMode == viewMode,
-                            onClick = { preferences = preferences.copy(mediaViewMode = viewMode) },
+                            onClick = {
+                                if (viewMode != preferences.mediaViewMode) {
+                                    preferences = if (viewMode == MediaViewMode.FOLDERS) {
+                                        preferences.copy(
+                                            mediaViewMode = viewMode,
+                                            mediaLayoutMode = preferences.folderMediaLayoutMode,
+                                        )
+                                    } else {
+                                        val newLayout = if (preferences.mediaLayoutMode == MediaLayoutMode.CRATE) {
+                                            MediaLayoutMode.GRID
+                                        } else {
+                                            preferences.mediaLayoutMode
+                                        }
+                                        preferences.copy(
+                                            mediaViewMode = viewMode,
+                                            mediaLayoutMode = newLayout,
+                                        )
+                                    }
+                                }
+                            },
                             shape = SegmentedButtonDefaults.itemShape(
                                 index = index,
                                 count = MediaViewMode.entries.size,
@@ -82,13 +112,35 @@ fun QuickSettingsDialog(
                         ) { Text(text = viewMode.name()) }
                     }
                 }
+                val layoutModes = if (preferences.mediaViewMode == MediaViewMode.FOLDERS) {
+                    listOf(
+                        MediaLayoutMode.LIST,
+                        MediaLayoutMode.GRID,
+                        MediaLayoutMode.CRATE,
+                    )
+                } else {
+                    listOf(
+                        MediaLayoutMode.LIST,
+                        MediaLayoutMode.GRID,
+                    )
+                }
                 MediaLayoutAndSortSettings(
                     layoutMode = preferences.mediaLayoutMode,
+                    layoutModes = layoutModes,
                     sort = Sort(
                         preferences.sortBy,
                         preferences.sortOrder,
                     ),
-                    onLayoutModeChange = { preferences = preferences.copy(mediaLayoutMode = it) },
+                    onLayoutModeChange = { newLayoutMode ->
+                        preferences = if (preferences.mediaViewMode == MediaViewMode.FOLDERS) {
+                            preferences.copy(
+                                mediaLayoutMode = newLayoutMode,
+                                folderMediaLayoutMode = newLayoutMode,
+                            )
+                        } else {
+                            preferences.copy(mediaLayoutMode = newLayoutMode)
+                        }
+                    },
                     onSortChange = {
                         preferences = preferences.copy(
                             sortBy = it.by,

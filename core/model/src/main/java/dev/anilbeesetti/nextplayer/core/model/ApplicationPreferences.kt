@@ -14,7 +14,16 @@ data class ApplicationPreferences(
     val includeNetworkWatchHistory: Boolean = true,
     val excludeFolders: List<String> = emptyList(),
     val mediaViewMode: MediaViewMode = MediaViewMode.FOLDERS,
-    val mediaLayoutMode: MediaLayoutMode = MediaLayoutMode.LIST,
+    val mediaLayoutMode: MediaLayoutMode = if (mediaViewMode == MediaViewMode.FOLDERS) {
+        MediaLayoutMode.CRATE
+    } else {
+        MediaLayoutMode.LIST
+    },
+    val folderMediaLayoutMode: MediaLayoutMode = if (mediaViewMode == MediaViewMode.FOLDERS) {
+        mediaLayoutMode
+    } else {
+        MediaLayoutMode.CRATE
+    },
 
     // Network browser
     val networkSortBy: Sort.By = Sort.By.TITLE,
