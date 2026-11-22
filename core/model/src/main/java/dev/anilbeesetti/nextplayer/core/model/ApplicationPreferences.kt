@@ -19,11 +19,6 @@ data class ApplicationPreferences(
     } else {
         MediaLayoutMode.LIST
     },
-    val folderMediaLayoutMode: MediaLayoutMode = if (mediaViewMode == MediaViewMode.FOLDERS) {
-        mediaLayoutMode
-    } else {
-        MediaLayoutMode.CRATE
-    },
 
     // Network browser
     val networkSortBy: Sort.By = Sort.By.TITLE,

@@ -41,7 +41,11 @@ fun MediaQuickSettingsDialog(
     dateLabel: Int = R.string.date,
     layoutModes: List<MediaLayoutMode> = listOf(MediaLayoutMode.LIST, MediaLayoutMode.GRID),
 ) {
-    var selectedLayout by remember { mutableStateOf(value = layoutMode) }
+    var selectedLayout by remember {
+        mutableStateOf(
+            value = if (layoutMode in layoutModes) layoutMode else layoutModes.first(),
+        )
+    }
     var selectedSort by remember { mutableStateOf(value = sort) }
 
     NextDialog(

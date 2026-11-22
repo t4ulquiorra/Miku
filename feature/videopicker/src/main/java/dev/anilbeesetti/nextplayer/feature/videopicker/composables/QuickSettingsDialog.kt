@@ -65,6 +65,15 @@ fun QuickSettingsDialog(
             },
         )
     }
+    var savedFolderLayoutMode by remember {
+        mutableStateOf(
+            value = if (applicationPreferences.mediaViewMode == MediaViewMode.FOLDERS) {
+                applicationPreferences.mediaLayoutMode
+            } else {
+                MediaLayoutMode.CRATE
+            },
+        )
+    }
 
     NextDialog(
         onDismissRequest = onDismiss,
@@ -86,7 +95,7 @@ fun QuickSettingsDialog(
                                     preferences = if (viewMode == MediaViewMode.FOLDERS) {
                                         preferences.copy(
                                             mediaViewMode = viewMode,
-                                            mediaLayoutMode = preferences.folderMediaLayoutMode,
+                                            mediaLayoutMode = savedFolderLayoutMode,
                                         )
                                     } else {
                                         val newLayout = if (preferences.mediaLayoutMode == MediaLayoutMode.CRATE) {
@@ -132,14 +141,10 @@ fun QuickSettingsDialog(
                         preferences.sortOrder,
                     ),
                     onLayoutModeChange = { newLayoutMode ->
-                        preferences = if (preferences.mediaViewMode == MediaViewMode.FOLDERS) {
-                            preferences.copy(
-                                mediaLayoutMode = newLayoutMode,
-                                folderMediaLayoutMode = newLayoutMode,
-                            )
-                        } else {
-                            preferences.copy(mediaLayoutMode = newLayoutMode)
+                        if (preferences.mediaViewMode == MediaViewMode.FOLDERS) {
+                            savedFolderLayoutMode = newLayoutMode
                         }
+                        preferences = preferences.copy(mediaLayoutMode = newLayoutMode)
                     },
                     onSortChange = {
                         preferences = preferences.copy(
