@@ -82,8 +82,7 @@ fun VideoItem(
             onLongClick = onLongClick,
         )
 
-        MediaLayoutMode.GRID,
-        MediaLayoutMode.CRATE -> VideoGridItem(
+        MediaLayoutMode.GRID -> VideoGridItem(
             video = video,
             isRecentlyPlayedVideo = isRecentlyPlayedVideo,
             preferences = preferences,

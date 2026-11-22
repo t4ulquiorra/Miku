@@ -445,32 +445,12 @@ internal fun MediaPickerScreenContent(
                             (mediaHolder.folders.isEmpty() && mediaHolder.videos.isEmpty())
                         ) {
                             NoVideosFound(contentPadding = updatedScaffoldPadding)
-                        } else if (state.folderName == null &&
-                            state.preferences.mediaViewMode == MediaViewMode.FOLDERS &&
-                            state.preferences.mediaLayoutMode == MediaLayoutMode.CRATE &&
-                            mediaHolder.folders.isNotEmpty()
-                        ) {
-                            CrateHome(
-                                folders = mediaHolder.folders,
-                                recentlyPlayedFolder = state.recentlyPlayedFolder,
-                                onOpenFolder = {
-                                    onAction(MediaPickerAction.OnFolderClick(folderPath = it))
-                                },
-                                onPlayLast = onFabClick,
-                                contentPadding = updatedScaffoldPadding,
-                            )
                         } else {
-                            val mediaViewPreferences =
-                                if (state.preferences.mediaLayoutMode == MediaLayoutMode.CRATE) {
-                                    state.preferences.copy(mediaLayoutMode = MediaLayoutMode.GRID)
-                                } else {
-                                    state.preferences
-                                }
                             MediaView(
                                 recentlyPlayedVideo = state.recentlyPlayedVideo,
                                 recentlyPlayedFolder = state.recentlyPlayedFolder,
                                 mediaHolder = mediaHolder,
-                                preferences = mediaViewPreferences,
+                                preferences = state.preferences,
                                 onFolderClick = {
                                     onAction(MediaPickerAction.OnFolderClick(folderPath = it))
                                 },

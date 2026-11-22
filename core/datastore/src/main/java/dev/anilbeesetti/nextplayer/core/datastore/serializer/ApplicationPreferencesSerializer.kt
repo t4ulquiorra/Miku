@@ -10,10 +10,7 @@ import kotlinx.serialization.json.Json
 
 object ApplicationPreferencesSerializer : Serializer<ApplicationPreferences> {
 
-    private val jsonFormat = Json {
-        ignoreUnknownKeys = true
-        coerceInputValues = true
-    }
+    private val jsonFormat = Json { ignoreUnknownKeys = true }
     override val defaultValue: ApplicationPreferences
         get() = ApplicationPreferences()
 

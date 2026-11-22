@@ -39,13 +39,8 @@ fun MediaQuickSettingsDialog(
     onDismiss: () -> Unit,
     onConfirm: (MediaLayoutMode, Sort) -> Unit,
     dateLabel: Int = R.string.date,
-    layoutModes: List<MediaLayoutMode> = listOf(MediaLayoutMode.LIST, MediaLayoutMode.GRID),
 ) {
-    var selectedLayout by remember {
-        mutableStateOf(
-            value = if (layoutMode in layoutModes) layoutMode else layoutModes.first(),
-        )
-    }
+    var selectedLayout by remember { mutableStateOf(value = layoutMode) }
     var selectedSort by remember { mutableStateOf(value = sort) }
 
     NextDialog(
@@ -59,7 +54,6 @@ fun MediaQuickSettingsDialog(
                     sort = selectedSort,
                     onLayoutModeChange = { selectedLayout = it },
                     onSortChange = { selectedSort = it },
-                    layoutModes = layoutModes,
                     sortOptions = sortOptions,
                     dateLabel = dateLabel,
                 )
@@ -85,7 +79,6 @@ fun MediaLayoutAndSortSettings(
     sort: Sort,
     onLayoutModeChange: (MediaLayoutMode) -> Unit,
     onSortChange: (Sort) -> Unit,
-    layoutModes: List<MediaLayoutMode> = listOf(MediaLayoutMode.LIST, MediaLayoutMode.GRID),
     sortOptions: List<Sort.By> =
         listOf(
             Sort.By.TITLE,
@@ -98,13 +91,13 @@ fun MediaLayoutAndSortSettings(
 ) {
     SectionTitle(text = stringResource(R.string.media_layout))
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        layoutModes.forEachIndexed { index, mode ->
+        MediaLayoutMode.entries.forEachIndexed { index, mode ->
             SegmentedButton(
                 selected = layoutMode == mode,
                 onClick = { onLayoutModeChange(mode) },
                 shape = SegmentedButtonDefaults.itemShape(
                     index = index,
-                    layoutModes.size,
+                    MediaLayoutMode.entries.size,
                 ),
                 colors = SegmentedButtonDefaults.colors(
                     activeContentColor = MaterialTheme.colorScheme.primary,
@@ -112,11 +105,13 @@ fun MediaLayoutAndSortSettings(
                 ),
             ) {
                 Text(
-                    text = when (mode) {
-                        MediaLayoutMode.LIST -> stringResource(id = R.string.list)
-                        MediaLayoutMode.GRID -> stringResource(id = R.string.grid)
-                        MediaLayoutMode.CRATE -> "Crate 3D"
-                    },
+                    text = stringResource(
+                        id = if (mode == MediaLayoutMode.LIST) {
+                            R.string.list
+                        } else {
+                            R.string.grid
+                        },
+                    ),
                 )
             }
         }
