@@ -448,15 +448,25 @@ internal fun MediaPickerScreenContent(
                         ) {
                             NoVideosFound(contentPadding = updatedScaffoldPadding)
                         } else {
-                            val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                            val configuration = LocalConfiguration.current
+                            val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
                             if (isLandscape && state.folderName == null && state.preferences.mediaViewMode == MediaViewMode.FOLDERS && mediaHolder.folders.isNotEmpty()) {
+                                val useNavRail = configuration.screenWidthDp >= 600 && isLandscape
+                                val hasResumeFab = hasMedia
+                                val bottomReserved = scaffoldPadding.calculateBottomPadding() + if (hasResumeFab) {
+                                    if (useNavRail) 80.dp else (navigationBottomPadding + 72.dp)
+                                } else {
+                                    navigationBottomPadding
+                                }
                                 CrateHome(
                                     folders = mediaHolder.folders,
                                     recentlyPlayedFolder = state.recentlyPlayedFolder,
                                     onOpenFolder = {
                                         onAction(MediaPickerAction.OnFolderClick(folderPath = it))
                                     },
-                                    modifier = Modifier.fillMaxSize(),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(bottom = bottomReserved),
                                 )
                             } else {
                                 MediaView(

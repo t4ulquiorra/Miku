@@ -8,10 +8,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -34,6 +37,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,7 +90,7 @@ private val ORGANIC_OFFSETS = listOf(
 )
 
 /**
- * LANDSCAPE 3D Folder Crate Viewport (1184 x 800)
+ * LANDSCAPE 3D Folder Crate Viewport (950 x 740 design box)
  * Ported directly from ~/docs/prototype.html:
  * .crate-viewport, .folder-wrap, .folder-tab-btn, .folder-body-btn,
  * .folder-name-big, .folder-stamp, .folder-spines, .open-folder-cta,
@@ -97,51 +101,72 @@ fun CrateHome(
     folders: List<Folder>,
     recentlyPlayedFolder: Folder? = null,
     onOpenFolder: (String) -> Unit = {},
+    contentPadding: PaddingValues = PaddingValues(16.dp),
     modifier: Modifier = Modifier,
 ) {
     if (folders.isEmpty()) return
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
     ) {
-        val designWidth = 1184.dp
-        val designHeight = 800.dp
-        val scale = minOf(
-            maxWidth / designWidth,
-            maxHeight / designHeight,
+        val layoutDirection = LocalLayoutDirection.current
+        val paddingStart = contentPadding.calculateStartPadding(layoutDirection)
+        val paddingEnd = contentPadding.calculateEndPadding(layoutDirection)
+        val paddingTop = contentPadding.calculateTopPadding()
+        val paddingBottom = contentPadding.calculateBottomPadding()
+
+        val availableWidth = (maxWidth - paddingStart - paddingEnd).coerceAtLeast(0.dp)
+        val availableHeight = (maxHeight - paddingTop - paddingBottom).coerceAtLeast(0.dp)
+
+        val designWidth = 950.dp
+        val designHeight = 740.dp
+
+        val s = minOf(
+            availableWidth / designWidth,
+            availableHeight / designHeight,
         )
 
-        // .crate-viewport: 1184px x 800px, scaled uniformly to fit screen
+        val scaledWidth = designWidth * s
+        val scaledHeight = designHeight * s
+
+        val offsetX = paddingStart + (availableWidth - scaledWidth) / 2
+        val offsetY = paddingTop + (availableHeight - scaledHeight) / 2
+
+        // Design box 950 x 740 scaled uniformly by s and centered in available area
         Box(
             modifier = Modifier
-                .size(designWidth, designHeight)
+                .offset(x = offsetX, y = offsetY)
+                .size(scaledWidth, scaledHeight)
                 .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    transformOrigin = TransformOrigin.Center
+                    scaleX = s
+                    scaleY = s
+                    transformOrigin = TransformOrigin(0f, 0f)
                 },
         ) {
-            val total = folders.size
-            val frontIndex = 0
-            val maxVisible = minOf(folders.lastIndex, frontIndex + 6)
+            Box(
+                modifier = Modifier.requiredSize(designWidth, designHeight),
+            ) {
+                val total = folders.size
+                val frontIndex = 0
+                val maxVisible = minOf(folders.lastIndex, frontIndex + 6)
 
-            // Render back-to-front (highest d down to 0) so front card is on top
-            for (index in maxVisible downTo frontIndex) {
-                val folder = folders[index]
-                val d = (index - frontIndex).toFloat()
-                val isFront = index == frontIndex
-                val isLast = recentlyPlayedFolder?.path == folder.path
+                // Render back-to-front (highest d down to 0) so front card is on top
+                for (index in maxVisible downTo frontIndex) {
+                    val folder = folders[index]
+                    val d = (index - frontIndex).toFloat()
+                    val isFront = index == frontIndex
+                    val isLast = recentlyPlayedFolder?.path == folder.path
 
-                CrateFolderWrap(
-                    folder = folder,
-                    index = index,
-                    d = d,
-                    totalFolders = total,
-                    isFront = isFront,
-                    isLastPlayed = isLast,
-                    onOpenFolder = { onOpenFolder(folder.path) },
-                )
+                    CrateFolderWrap(
+                        folder = folder,
+                        index = index,
+                        d = d,
+                        totalFolders = total,
+                        isFront = isFront,
+                        isLastPlayed = isLast,
+                        onOpenFolder = { onOpenFolder(folder.path) },
+                    )
+                }
             }
         }
     }
@@ -187,10 +212,10 @@ private fun CrateFolderWrap(
     val paperColor = PAPERS[index % PAPERS.size]
     val tabBg = if (isLastPlayed) accent.color else paperColor
 
-    // .folder-wrap: left 182px, top 330px, width 820px, height 410px, transform-origin: 50% 0%
+    // .folder-wrap: left 65px, top 330px, width 820px, height 410px, transform-origin: 50% 0%
     Box(
         modifier = Modifier
-            .offset(x = 182.dp, y = 330.dp)
+            .offset(x = 65.dp, y = 330.dp)
             .size(width = 820.dp, height = 410.dp)
             .zIndex(zIndexVal)
             .graphicsLayer {
