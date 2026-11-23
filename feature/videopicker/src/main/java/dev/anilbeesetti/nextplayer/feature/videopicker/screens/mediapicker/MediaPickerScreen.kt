@@ -1,5 +1,6 @@
 package dev.anilbeesetti.nextplayer.feature.videopicker.screens.mediapicker
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -64,6 +65,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -446,22 +448,34 @@ internal fun MediaPickerScreenContent(
                         ) {
                             NoVideosFound(contentPadding = updatedScaffoldPadding)
                         } else {
-                            MediaView(
-                                recentlyPlayedVideo = state.recentlyPlayedVideo,
-                                recentlyPlayedFolder = state.recentlyPlayedFolder,
-                                mediaHolder = mediaHolder,
-                                preferences = state.preferences,
-                                onFolderClick = {
-                                    onAction(MediaPickerAction.OnFolderClick(folderPath = it))
-                                },
-                                onVideoClick = {
-                                    onAction(MediaPickerAction.OnPlayVideo(uri = it))
-                                },
-                                selectionManager = selectionManager,
-                                lazyGridState = lazyGridState,
-                                focusState = focusState,
-                                contentPadding = updatedScaffoldPadding,
-                            )
+                            val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                            if (isLandscape && state.folderName == null && state.preferences.mediaViewMode == MediaViewMode.FOLDERS && mediaHolder.folders.isNotEmpty()) {
+                                CrateHome(
+                                    folders = mediaHolder.folders,
+                                    recentlyPlayedFolder = state.recentlyPlayedFolder,
+                                    onOpenFolder = {
+                                        onAction(MediaPickerAction.OnFolderClick(folderPath = it))
+                                    },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                MediaView(
+                                    recentlyPlayedVideo = state.recentlyPlayedVideo,
+                                    recentlyPlayedFolder = state.recentlyPlayedFolder,
+                                    mediaHolder = mediaHolder,
+                                    preferences = state.preferences,
+                                    onFolderClick = {
+                                        onAction(MediaPickerAction.OnFolderClick(folderPath = it))
+                                    },
+                                    onVideoClick = {
+                                        onAction(MediaPickerAction.OnPlayVideo(uri = it))
+                                    },
+                                    selectionManager = selectionManager,
+                                    lazyGridState = lazyGridState,
+                                    focusState = focusState,
+                                    contentPadding = updatedScaffoldPadding,
+                                )
+                            }
                         }
                     }
                     if (isTv) {
