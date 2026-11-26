@@ -595,7 +595,7 @@ private fun CardBottomBlock(
     previewVideos: List<CrateCardVideoPreview>,
     cqw: (Float) -> Dp,
     cqh: (Float) -> Dp,
-    toCardSp: (Dp) -> TextUnit,
+    toCardSp: Dp.() -> TextUnit,
     onOpenFolder: () -> Unit,
 ) {
     val showThumbs = heightClass != CardHeightClass.SHORT &&
@@ -771,7 +771,7 @@ private fun MetaBlock(
     heightClass: CardHeightClass,
     cqw: (Float) -> Dp,
     cqh: (Float) -> Dp,
-    toCardSp: (Dp) -> TextUnit,
+    toCardSp: Dp.() -> TextUnit,
 ) {
     val metaDp = when {
         heightClass == CardHeightClass.TINY -> cqw(3.2f).coerceIn(6.5.dp, 9.dp)
@@ -850,7 +850,7 @@ private fun ThumbsCluster(
     previewVideos: List<CrateCardVideoPreview>,
     cqw: (Float) -> Dp,
     cqh: (Float) -> Dp,
-    toCardSp: (Dp) -> TextUnit,
+    toCardSp: Dp.() -> TextUnit,
 ) {
     val clusterW = if (wide) minOf(cqw(30f), cqh(60f)) else minOf(cqw(49f), cqh(76f))
     val clusterH = if (wide) minOf(cqw(9f), cqh(18f)) else minOf(cqw(16f), cqh(25f))
@@ -954,7 +954,7 @@ private fun OpenFolderKey(
     heightClass: CardHeightClass,
     cqw: (Float) -> Dp,
     cqh: (Float) -> Dp,
-    toCardSp: (Dp) -> TextUnit,
+    toCardSp: Dp.() -> TextUnit,
     onClick: () -> Unit,
 ) {
     val keyHeight = when {
