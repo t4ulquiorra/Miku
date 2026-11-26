@@ -56,7 +56,8 @@ fun SettingsScreen(output: SettingsOutput) {
 private fun SettingsScreenContent(onAction: (SettingsAction) -> Unit) {
     val context = LocalContext.current
     val isDebug = remember(context) {
-        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 ||
+            context.packageName.endsWith(".release")
     }
     val settingRows = remember { SettingRow.entries }
     val focusState = rememberRestorableFocusState()

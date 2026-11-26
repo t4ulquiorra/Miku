@@ -34,6 +34,9 @@ jobs:
       - name: Build Debug APKs
         run: ./gradlew assembleDebug
 
+      - name: Build Minified Debug-Signed APKs
+        run: ./gradlew :app:assembleRelease-with-debug-signing
+
       - name: Run Local Tests
         run: ./gradlew test
 
@@ -42,6 +45,13 @@ jobs:
         with:
           name: miku-debug-apks
           path: ./app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+      - name: Upload Minified Debug-Signed APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: miku-release-debug-signed-apks
+          path: ./app/build/outputs/apk/release-with-debug-signing/*.apk
           retention-days: 7
 
       - name: Upload Build Reports

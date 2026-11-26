@@ -28,30 +28,32 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Canvas as ComposeCanvas
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -68,6 +70,7 @@ import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypePaper1
 import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypePaper2
 import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypePaper3
 import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeStamp
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.sin
 
@@ -122,11 +125,44 @@ private fun formatMinutesSeconds(millis: Long): String {
 }
 
 /**
+ * Pre-renders a Gaussian-blurred rounded rect into an [ImageBitmap] once per size change,
+ * avoiding per-frame [BlurMaskFilter] work during drag/fling.
+ */
+private fun buildShadowBitmap(
+    widthPx: Float,
+    heightPx: Float,
+    radiusPx: Float,
+    blurPx: Float,
+    alpha: Float,
+): Pair<ImageBitmap, Int> {
+    val pad = ceil(blurPx * 1.5f).toInt().coerceAtLeast(1)
+    val bmpW = (ceil(widthPx).toInt() + pad * 2).coerceAtLeast(1)
+    val bmpH = (ceil(heightPx).toInt() + pad * 2).coerceAtLeast(1)
+    val bitmap = ImageBitmap(bmpW, bmpH)
+    val canvas = ComposeCanvas(bitmap)
+    val paint = Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.argb((alpha * 255).toInt().coerceIn(0, 255), 0, 0, 0)
+        if (blurPx > 0.5f) {
+            maskFilter = BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL)
+        }
+    }
+    canvas.nativeCanvas.drawRoundRect(
+        RectF(pad.toFloat(), pad.toFloat(), pad + widthPx, pad + heightPx),
+        radiusPx,
+        radiusPx,
+        paint,
+    )
+    return bitmap to pad
+}
+
+/**
  * Single adaptive folder card with its protruding index tab, ported from
  * design/crate_adaptive.html & design/CRATE_SPEC.md section 2.
  *
  * All internal sizes derive proportionally from [cardWidth] and [cardHeight].
- * The tab protrudes above the top edge by ([tabHeight] - 1.dp).
+ * [darkenAlphaProvider] and [detailVisibleProvider] are read in the draw phase only
+ * so moving cards in a stack causes zero recompositions.
  */
 @Composable
 fun CrateFolderCard(
@@ -138,12 +174,18 @@ fun CrateFolderCard(
     modifier: Modifier = Modifier,
     tabHeight: Dp? = null,
     isLastPlayed: Boolean = false,
-    darkenAlpha: Float = 0f,
+    darkenAlphaProvider: () -> Float = { 0f },
+    detailVisibleProvider: () -> Boolean = { true },
     previewVideos: List<CrateCardVideoPreview> = emptyList(),
     onOpenFolder: () -> Unit = {},
     onTabClick: (() -> Unit)? = null,
     onCardClick: (() -> Unit)? = null,
+    onRecompose: (() -> Unit)? = null,
 ) {
+    if (onRecompose != null) {
+        SideEffect { onRecompose() }
+    }
+
     val accent = LocalAppAccent.current
     val density = LocalDensity.current
 
@@ -193,14 +235,25 @@ fun CrateFolderCard(
     val cardRadiusTL = if (wide) 6.dp else 4.dp
     val cardRadiusTR = if (wide) 20.dp else 12.dp
     val cardRadiusBottom = if (wide) 16.dp else 10.dp
-    val cardShape = RoundedCornerShape(
-        topStart = cardRadiusTL,
-        topEnd = cardRadiusTR,
-        bottomEnd = cardRadiusBottom,
-        bottomStart = cardRadiusBottom,
-    )
-
-    val shadowPaint = remember { Paint().apply { isAntiAlias = true } }
+    val cardShape = remember(cardRadiusTL, cardRadiusTR, cardRadiusBottom) {
+        RoundedCornerShape(
+            topStart = cardRadiusTL,
+            topEnd = cardRadiusTR,
+            bottomEnd = cardRadiusBottom,
+            bottomStart = cardRadiusBottom,
+        )
+    }
+    val tabShape = remember(tabRadius) {
+        RoundedCornerShape(topStart = tabRadius, topEnd = tabRadius)
+    }
+    val tabGradient = remember {
+        Brush.verticalGradient(
+            listOf(
+                Color.White.copy(alpha = 0.07f),
+                Color.Black.copy(alpha = 0.20f),
+            ),
+        )
+    }
 
     Box(
         modifier = modifier.size(width = cardWidth, height = cardHeight),
@@ -211,40 +264,41 @@ fun CrateFolderCard(
                 .offset(x = tabLeft, y = -(resolvedTabH - 1.dp))
                 .size(width = tabW, height = resolvedTabH)
                 .zIndex(2f)
-                .drawBehind {
-                    // Real Gaussian blur upward shadow: 0 -4 12 rgba(0,0,0,.35)
+                .drawWithCache {
                     val blurPx = 12.dp.toPx()
-                    val offsetYPx = (-4).dp.toPx()
+                    val offsetYPx = (-4).dp.toPx().toInt()
                     val rPx = tabRadius.toPx()
-                    shadowPaint.color = android.graphics.Color.argb((0.35f * 255).toInt(), 0, 0, 0)
-                    shadowPaint.maskFilter = BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL)
-                    drawIntoCanvas { canvas ->
-                        canvas.nativeCanvas.drawRoundRect(
-                            RectF(0f, offsetYPx, size.width, size.height + offsetYPx),
-                            rPx,
-                            rPx,
-                            shadowPaint,
+                    val (shadowBmp, pad) = buildShadowBitmap(
+                        widthPx = size.width,
+                        heightPx = size.height,
+                        radiusPx = rPx,
+                        blurPx = blurPx,
+                        alpha = 0.35f,
+                    )
+                    onDrawBehind {
+                        drawImage(
+                            image = shadowBmp,
+                            dstOffset = IntOffset(-pad, offsetYPx - pad),
                         )
                     }
                 }
-                .clip(RoundedCornerShape(topStart = tabRadius, topEnd = tabRadius))
+                .clip(tabShape)
                 .background(tabBg)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.07f),
-                            Color.Black.copy(alpha = 0.20f),
-                        ),
-                    ),
-                )
-                .drawBehind {
+                .background(tabGradient)
+                .drawWithContent {
                     // Inset 0 1px 0 rgba(255,255,255,.35)
+                    val rPx = tabRadius.toPx()
                     drawLine(
                         color = Color.White.copy(alpha = 0.35f),
-                        start = Offset(tabRadius.toPx() * 0.5f, 0.5.dp.toPx()),
-                        end = Offset(size.width - tabRadius.toPx() * 0.5f, 0.5.dp.toPx()),
+                        start = Offset(rPx * 0.5f, 0.5.dp.toPx()),
+                        end = Offset(size.width - rPx * 0.5f, 0.5.dp.toPx()),
                         strokeWidth = 1.dp.toPx(),
                     )
+                    drawContent()
+                    val da = darkenAlphaProvider()
+                    if (da > 0.001f) {
+                        drawRect(Color.Black.copy(alpha = da))
+                    }
                 }
                 .then(
                     if (onTabClick != null) {
@@ -253,16 +307,6 @@ fun CrateFolderCard(
                             indication = null,
                             onClick = onTabClick,
                         )
-                    } else {
-                        Modifier
-                    },
-                )
-                .then(
-                    if (darkenAlpha > 0f) {
-                        Modifier.drawWithContent {
-                            drawContent()
-                            drawRect(Color.Black.copy(alpha = darkenAlpha))
-                        }
                     } else {
                         Modifier
                     },
@@ -316,24 +360,33 @@ fun CrateFolderCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .drawBehind {
-                    // Real Gaussian blur upward shadow: 0 -12 28 rgba(0,0,0,.4)
+                .drawWithCache {
                     val blurPx = 28.dp.toPx()
-                    val offsetYPx = (-12).dp.toPx()
+                    val offsetYPx = (-12).dp.toPx().toInt()
                     val rPx = cardRadiusTR.toPx()
-                    shadowPaint.color = android.graphics.Color.argb((0.40f * 255).toInt(), 0, 0, 0)
-                    shadowPaint.maskFilter = BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL)
-                    drawIntoCanvas { canvas ->
-                        canvas.nativeCanvas.drawRoundRect(
-                            RectF(0f, offsetYPx, size.width, size.height + offsetYPx),
-                            rPx,
-                            rPx,
-                            shadowPaint,
+                    val (shadowBmp, pad) = buildShadowBitmap(
+                        widthPx = size.width,
+                        heightPx = size.height,
+                        radiusPx = rPx,
+                        blurPx = blurPx,
+                        alpha = 0.40f,
+                    )
+                    onDrawBehind {
+                        drawImage(
+                            image = shadowBmp,
+                            dstOffset = IntOffset(-pad, offsetYPx - pad),
                         )
                     }
                 }
                 .clip(cardShape)
                 .background(paperColor)
+                .drawWithContent {
+                    drawContent()
+                    val da = darkenAlphaProvider()
+                    if (da > 0.001f) {
+                        drawRect(Color.Black.copy(alpha = da))
+                    }
+                }
                 .then(
                     if (onCardClick != null) {
                         Modifier.clickable(
@@ -407,82 +460,82 @@ fun CrateFolderCard(
                         .padding(bottom = titleDp * 0.06f),
                 )
 
-                // Optional roomy 9-line video list
-                if (heightClass == CardHeightClass.ROOMY && folder.videosCount > 0) {
-                    val vListItems = (0 until minOf(folder.videosCount, 9)).map { k ->
-                        previewVideos.getOrNull(k) ?: CrateCardVideoPreview(
-                            title = "video${k + 1}",
-                            durationMillis = (folder.totalDuration / folder.videosCount.coerceAtLeast(1))
-                                .coerceAtLeast(60_000L),
-                        )
-                    }
-                    val vListFontDp = if (wide) {
-                        minOf(cqw(1.5f), cqh(2.6f))
-                    } else {
-                        cqw(3f).coerceIn(8.dp, 12.dp)
-                    }
-                    val vListMargin = minOf(cqw(2f), cqh(3f))
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .padding(vertical = vListMargin)
-                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
+                // Detailed content (only drawn for the front 2-3 cards; skipped for deep cards)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .drawWithContent {
+                            if (detailVisibleProvider()) {
                                 drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        0.0f to Color.Black,
-                                        0.70f to Color.Black,
-                                        1.0f to Color.Transparent,
-                                    ),
-                                    blendMode = BlendMode.DstIn,
+                            }
+                        },
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (heightClass == CardHeightClass.ROOMY && folder.videosCount > 0) {
+                            val vListItems = (0 until minOf(folder.videosCount, 9)).map { k ->
+                                previewVideos.getOrNull(k) ?: CrateCardVideoPreview(
+                                    title = "video${k + 1}",
+                                    durationMillis = (folder.totalDuration / folder.videosCount.coerceAtLeast(1))
+                                        .coerceAtLeast(60_000L),
                                 )
-                            },
-                    ) {
-                        if (wide) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(cqw(3f)),
-                                modifier = Modifier.fillMaxSize(),
+                            }
+                            val vListFontDp = if (wide) {
+                                minOf(cqw(1.5f), cqh(2.6f))
+                            } else {
+                                cqw(3f).coerceIn(8.dp, 12.dp)
+                            }
+                            val vListMargin = minOf(cqw(2f), cqh(3f))
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .padding(vertical = vListMargin),
                             ) {
-                                val split = (vListItems.size + 1) / 2
-                                Column(modifier = Modifier.weight(1f)) {
-                                    vListItems.take(split).forEach { item ->
-                                        VideoListRow(item, vListFontDp.toCardSp())
+                                if (wide) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(cqw(3f)),
+                                        modifier = Modifier.fillMaxSize(),
+                                    ) {
+                                        val split = (vListItems.size + 1) / 2
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            vListItems.take(split).forEach { item ->
+                                                VideoListRow(item, vListFontDp.toCardSp())
+                                            }
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            vListItems.drop(split).forEach { item ->
+                                                VideoListRow(item, vListFontDp.toCardSp())
+                                            }
+                                        }
                                     }
-                                }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    vListItems.drop(split).forEach { item ->
-                                        VideoListRow(item, vListFontDp.toCardSp())
+                                } else {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        vListItems.forEach { item ->
+                                            VideoListRow(item, vListFontDp.toCardSp())
+                                        }
                                     }
                                 }
                             }
                         } else {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                vListItems.forEach { item ->
-                                    VideoListRow(item, vListFontDp.toCardSp())
-                                }
-                            }
+                            Spacer(modifier = Modifier.weight(1f))
                         }
-                    }
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
 
-                // Bottom block
-                CardBottomBlock(
-                    folder = folder,
-                    folderIndex = index,
-                    wide = wide,
-                    heightClass = heightClass,
-                    isVeryNarrow = isVeryNarrow,
-                    previewVideos = previewVideos,
-                    cqw = ::cqw,
-                    cqh = ::cqh,
-                    toCardSp = { this.toCardSp() },
-                    onOpenFolder = onOpenFolder,
-                )
+                        CardBottomBlock(
+                            folder = folder,
+                            folderIndex = index,
+                            wide = wide,
+                            heightClass = heightClass,
+                            isVeryNarrow = isVeryNarrow,
+                            previewVideos = previewVideos,
+                            cqw = ::cqw,
+                            cqh = ::cqh,
+                            toCardSp = { this.toCardSp() },
+                            onOpenFolder = onOpenFolder,
+                        )
+                    }
+                }
             }
 
             // Optional rotated "N NEW" stamp
@@ -518,12 +571,12 @@ fun CrateFolderCard(
                 }
             }
 
-            // Seam: 2dp inner white highlight along top edge tracing TL & TR corner arcs
+            // Seam: 2dp inner white highlight along top edge tracing TL & TR corner arcs (cached Path)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .zIndex(3f)
-                    .drawBehind {
+                    .drawWithCache {
                         val strokeWidthPx = 2.dp.toPx()
                         val strokeHalf = strokeWidthPx / 2f
                         val rTL = cardRadiusTL.toPx()
@@ -548,23 +601,13 @@ fun CrateFolderCard(
                                 forceMoveTo = false,
                             )
                         }
-                        drawPath(
-                            path = seamPath,
-                            color = Color.White.copy(alpha = 0.40f),
-                            style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round),
-                        )
+                        val stroke = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+                        val seamColor = Color.White.copy(alpha = 0.40f)
+                        onDrawBehind {
+                            drawPath(path = seamPath, color = seamColor, style = stroke)
+                        }
                     },
             )
-
-            // Depth darkening overlay (covers the whole card body cleanly without clipping tab)
-            if (darkenAlpha > 0f) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(4f)
-                        .background(Color.Black.copy(alpha = darkenAlpha)),
-                )
-            }
         }
     }
 }
@@ -883,6 +926,9 @@ private fun ThumbsCluster(
     val clusterH = if (wide) minOf(cqw(9f), cqh(18f)) else minOf(cqw(16f), cqh(25f))
     val thumbFontDp = if (wide) minOf(cqw(1.3f), cqh(2.6f)) else minOf(cqw(3f), cqh(4.6f))
     val tileW = clusterW * (if (wide) 0.42f else 0.49f)
+    val tileBrush = remember {
+        Brush.linearGradient(colors = listOf(Color(0xFF2C2519), Color(0xFF1B1710)))
+    }
 
     val tn = minOf(3, folder.videosCount)
     val slots = when (tn) {
@@ -924,11 +970,7 @@ private fun ThumbsCluster(
                     .zIndex((k + 1).toFloat())
                     .graphicsLayer { rotationZ = rot }
                     .clip(RoundedCornerShape(thumbFontDp * 0.4f))
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(Color(0xFF2C2519), Color(0xFF1B1710)),
-                        ),
-                    )
+                    .background(tileBrush)
                     .border(
                         width = 1.dp,
                         color = Color.Black.copy(alpha = 0.30f),

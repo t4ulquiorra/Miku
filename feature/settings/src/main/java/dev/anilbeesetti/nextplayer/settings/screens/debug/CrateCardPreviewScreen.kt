@@ -393,7 +393,7 @@ private fun StackDebugPane() {
             }
         }
 
-        // Info line + open feedback + collapsible toggle
+        // Info line + perf readout + open feedback + collapsible toggle
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -411,6 +411,12 @@ private fun StackDebugPane() {
                     fontFamily = JetBrainsMono,
                     fontSize = 11.sp,
                     color = PrototypeInk,
+                )
+                Text(
+                    text = "perf: avg ${"%.1f".format(stackState.avgFrameMs)}ms · worst ${"%.1f".format(stackState.worstFrameMs)}ms · move recomps: ${stackState.moveRecomps} (total ${stackState.totalCardRecomps})",
+                    fontFamily = JetBrainsMono,
+                    fontSize = 10.sp,
+                    color = PrototypeInkMuted,
                 )
                 openedFolderName?.let { name ->
                     Text(
