@@ -94,8 +94,8 @@ fun CrateCardPreviewScreen(
     val fakePreviews = remember(videosCount) {
         (1..minOf(videosCount, 9)).map { idx ->
             CrateCardVideoPreview(
-                title = "Episode 0$idx · 1080p",
-                durationMillis = (18 + idx * 3) * 60_000L,
+                title = "video$idx",
+                durationMillis = (15 + idx * 2) * 60_000L + 30_000L,
             )
         }
     }

@@ -1,14 +1,17 @@
 package dev.anilbeesetti.nextplayer.core.ui.components
 
+import android.graphics.BlurMaskFilter
+import android.graphics.Paint
+import android.graphics.RectF
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -25,13 +28,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
@@ -42,7 +45,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -194,27 +199,11 @@ fun CrateFolderCard(
         bottomStart = cardRadiusBottom,
     )
 
+    val shadowPaint = remember { Paint().apply { isAntiAlias = true } }
+
     Box(
         modifier = modifier.size(width = cardWidth, height = cardHeight),
     ) {
-        // Upward card shadow: 0 -12 28 rgba(0,0,0,.4)
-        Box(
-            modifier = Modifier
-                .offset(y = (-24).dp)
-                .size(width = cardWidth, height = 24.dp)
-                .background(
-                    brush = Brush.verticalGradient(
-                        0.0f to Color.Transparent,
-                        0.5f to Color.Black.copy(alpha = 0.14f),
-                        1.0f to Color.Black.copy(alpha = 0.40f),
-                    ),
-                    shape = RoundedCornerShape(
-                        topStart = cardRadiusTL + 6.dp,
-                        topEnd = cardRadiusTR + 6.dp,
-                    ),
-                ),
-        )
-
         // Protruding index tab above the card top edge (zIndex above body seam)
         Box(
             modifier = Modifier
@@ -222,19 +211,20 @@ fun CrateFolderCard(
                 .size(width = tabW, height = resolvedTabH)
                 .zIndex(2f)
                 .drawBehind {
-                    // Upward shadow above tab: 0 -4 12 rgba(0,0,0,.35)
-                    val shadowH = 10.dp.toPx()
-                    drawRoundRect(
-                        brush = Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.35f),
-                            startY = -shadowH,
-                            endY = 2.dp.toPx(),
-                        ),
-                        topLeft = Offset(0f, -shadowH),
-                        size = androidx.compose.ui.geometry.Size(size.width, shadowH + 4.dp.toPx()),
-                        cornerRadius = CornerRadius(tabRadius.toPx(), tabRadius.toPx()),
-                    )
+                    // Real Gaussian blur upward shadow: 0 -4 12 rgba(0,0,0,.35)
+                    val blurPx = 12.dp.toPx()
+                    val offsetYPx = (-4).dp.toPx()
+                    val rPx = tabRadius.toPx()
+                    shadowPaint.color = android.graphics.Color.argb((0.35f * 255).toInt(), 0, 0, 0)
+                    shadowPaint.maskFilter = BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL)
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.drawRoundRect(
+                            RectF(0f, offsetYPx, size.width, size.height + offsetYPx),
+                            rPx,
+                            rPx,
+                            shadowPaint,
+                        )
+                    }
                 }
                 .clip(RoundedCornerShape(topStart = tabRadius, topEnd = tabRadius))
                 .background(tabBg)
@@ -315,6 +305,22 @@ fun CrateFolderCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .drawBehind {
+                    // Real Gaussian blur upward shadow: 0 -12 28 rgba(0,0,0,.4)
+                    val blurPx = 28.dp.toPx()
+                    val offsetYPx = (-12).dp.toPx()
+                    val rPx = cardRadiusTR.toPx()
+                    shadowPaint.color = android.graphics.Color.argb((0.40f * 255).toInt(), 0, 0, 0)
+                    shadowPaint.maskFilter = BlurMaskFilter(blurPx, BlurMaskFilter.Blur.NORMAL)
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.drawRoundRect(
+                            RectF(0f, offsetYPx, size.width, size.height + offsetYPx),
+                            rPx,
+                            rPx,
+                            shadowPaint,
+                        )
+                    }
+                }
                 .clip(cardShape)
                 .background(paperColor)
                 .then(
@@ -894,7 +900,7 @@ private fun ThumbsCluster(
                     .align(align)
                     .width(tileW)
                     .aspectRatio(16f / 9f)
-                    .zIndex(if (slot == ThumbSlot.MIDDLE) 2f else 1f)
+                    .zIndex((k + 1).toFloat())
                     .graphicsLayer { rotationZ = rot }
                     .clip(RoundedCornerShape(thumbFontDp * 0.4f))
                     .background(
@@ -941,7 +947,9 @@ private fun ThumbsCluster(
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.align(Alignment.BottomStart),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomStart),
                 )
             }
         }
@@ -977,24 +985,53 @@ private fun OpenFolderKey(
         else -> 0.dp
     }
 
-    KeycapButton(
-        onClick = onClick,
-        isAccent = true,
-        shape = RoundedCornerShape(keyRadius),
-        shadowHeight = 5.dp,
-        contentPadding = PaddingValues(horizontal = keyPadH),
+    val accent = LocalAppAccent.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val shadowHeight = 5.dp
+    val pressOffsetY = if (isPressed) shadowHeight else 0.dp
+    val keyShape = RoundedCornerShape(keyRadius)
+
+    Box(
         modifier = Modifier
+            .padding(bottom = shadowHeight)
             .height(keyHeight)
             .widthIn(min = minWidth),
     ) {
-        Text(
-            text = "Open folder →",
-            fontFamily = BricolageGrotesque,
-            fontWeight = FontWeight.Bold,
-            fontSize = keyFontDp.toCardSp(),
-            color = Color(0xFF0D0C0A),
-            maxLines = 1,
-            softWrap = false,
+        // Hard 5dp bottom edge (#7A2A12)
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(y = shadowHeight)
+                .clip(keyShape)
+                .background(accent.shadow),
         )
+
+        // Full orange keycap with centered label
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(min = minWidth)
+                .offset(y = pressOffsetY)
+                .clip(keyShape)
+                .background(accent.color)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                )
+                .padding(horizontal = keyPadH),
+        ) {
+            Text(
+                text = "Open folder →",
+                fontFamily = BricolageGrotesque,
+                fontWeight = FontWeight.Bold,
+                fontSize = keyFontDp.toCardSp(),
+                color = Color(0xFF0D0C0A),
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
     }
 }
