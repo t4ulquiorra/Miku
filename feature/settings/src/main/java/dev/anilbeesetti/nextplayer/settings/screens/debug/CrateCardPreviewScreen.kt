@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -341,6 +341,7 @@ private fun StackDebugPane() {
     var winH by remember { mutableFloatStateOf(800f) }
     var pos by remember { mutableFloatStateOf(1f) }
     var statusBar by remember { mutableStateOf(false) }
+    var controlsExpanded by remember { mutableStateOf(true) }
     var lastSolve by remember { mutableStateOf<CrateSolveResult?>(null) }
 
     val folders = remember {
@@ -390,65 +391,79 @@ private fun StackDebugPane() {
             }
         }
 
-        // Info line matching prototype
-        lastSolve?.let { r ->
-            val cw = r.cardWidthDp.roundToInt()
-            val ch = r.cardHeightDp.roundToInt()
-            val pct = (r.scaleOfApproved * 100f).roundToInt()
-            val behind = r.behindCount
-            Text(
-                text = "Area ${wInt}×${crateH.roundToInt()} → card ${cw}×${ch} (shape ${"%.2f".format(r.shape)}, ${pct}% of approved size) · $behind folder${if (behind == 1) "" else "s"} behind · pos=${"%.2f".format(pos)}",
-                fontFamily = JetBrainsMono,
-                fontSize = 11.sp,
-                color = PrototypeInk,
-            )
-        }
-
-        // Compact W / H / pos sliders + status bar checkbox
+        // Info line + collapsible toggle
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "W: ${wInt}dp",
-                    fontFamily = JetBrainsMono,
-                    fontSize = 10.sp,
-                    color = PrototypeInkMuted,
-                )
-                Slider(
-                    value = winW,
-                    onValueChange = { winW = it },
-                    valueRange = 280f..1600f,
-                    modifier = Modifier.height(28.dp),
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "H: ${hInt}dp",
-                    fontFamily = JetBrainsMono,
-                    fontSize = 10.sp,
-                    color = PrototypeInkMuted,
-                )
-                Slider(
-                    value = winH,
-                    onValueChange = { winH = it },
-                    valueRange = 280f..1400f,
-                    modifier = Modifier.height(28.dp),
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = statusBar,
-                    onCheckedChange = { statusBar = it },
-                )
-                Text(
-                    text = "Status bar (26dp)",
-                    fontFamily = JetBrainsMono,
-                    fontSize = 10.sp,
-                    color = PrototypeInk,
-                )
+            Text(
+                text = lastSolve?.let { r ->
+                    val cw = r.cardWidthDp.roundToInt()
+                    val ch = r.cardHeightDp.roundToInt()
+                    val pct = (r.scaleOfApproved * 100f).roundToInt()
+                    val behind = r.behindCount
+                    "Area ${wInt}×${crateH.roundToInt()} → card ${cw}×${ch} (${"%.2f".format(r.shape)}, ${pct}%) · $behind behind · pos=${"%.2f".format(pos)}"
+                } ?: "Area ${wInt}×${crateH.roundToInt()}",
+                fontFamily = JetBrainsMono,
+                fontSize = 11.sp,
+                color = PrototypeInk,
+                modifier = Modifier.weight(1f),
+            )
+            FilterChip(
+                selected = controlsExpanded,
+                onClick = { controlsExpanded = !controlsExpanded },
+                label = { Text(if (controlsExpanded) "Hide ▲" else "Controls ▼", fontSize = 10.sp) },
+            )
+        }
+
+        if (controlsExpanded) {
+            // Compact W / H / pos sliders + status bar checkbox
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "W: ${wInt}dp",
+                        fontFamily = JetBrainsMono,
+                        fontSize = 10.sp,
+                        color = PrototypeInkMuted,
+                    )
+                    Slider(
+                        value = winW,
+                        onValueChange = { winW = it },
+                        valueRange = 280f..1600f,
+                        modifier = Modifier.height(28.dp),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "H: ${hInt}dp",
+                        fontFamily = JetBrainsMono,
+                        fontSize = 10.sp,
+                        color = PrototypeInkMuted,
+                    )
+                    Slider(
+                        value = winH,
+                        onValueChange = { winH = it },
+                        valueRange = 280f..1400f,
+                        modifier = Modifier.height(28.dp),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = statusBar,
+                        onCheckedChange = { statusBar = it },
+                    )
+                    Text(
+                        text = "SB 26dp",
+                        fontFamily = JetBrainsMono,
+                        fontSize = 10.sp,
+                        color = PrototypeInk,
+                    )
+                }
             }
         }
 
@@ -503,7 +518,8 @@ private fun StackDebugPane() {
             ) {
                 Column(
                     modifier = Modifier
-                        .requiredSize(winW.dp, winH.dp)
+                        .wrapContentSize(align = Alignment.TopStart, unbounded = true)
+                        .size(winW.dp, winH.dp)
                         .background(Color(0xFF0C0B09))
                         .border(1.dp, Color(0xFF3A3220)),
                 ) {

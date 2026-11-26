@@ -138,6 +138,7 @@ fun CrateFolderCard(
     modifier: Modifier = Modifier,
     tabHeight: Dp? = null,
     isLastPlayed: Boolean = false,
+    darkenAlpha: Float = 0f,
     previewVideos: List<CrateCardVideoPreview> = emptyList(),
     onOpenFolder: () -> Unit = {},
     onTabClick: (() -> Unit)? = null,
@@ -252,6 +253,16 @@ fun CrateFolderCard(
                             indication = null,
                             onClick = onTabClick,
                         )
+                    } else {
+                        Modifier
+                    },
+                )
+                .then(
+                    if (darkenAlpha > 0f) {
+                        Modifier.drawWithContent {
+                            drawContent()
+                            drawRect(Color.Black.copy(alpha = darkenAlpha))
+                        }
                     } else {
                         Modifier
                     },
@@ -544,6 +555,16 @@ fun CrateFolderCard(
                         )
                     },
             )
+
+            // Depth darkening overlay (covers the whole card body cleanly without clipping tab)
+            if (darkenAlpha > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(4f)
+                        .background(Color.Black.copy(alpha = darkenAlpha)),
+                )
+            }
         }
     }
 }

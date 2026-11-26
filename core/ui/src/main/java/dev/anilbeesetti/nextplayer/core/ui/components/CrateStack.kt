@@ -15,10 +15,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -268,23 +265,7 @@ fun CrateStack(
                             transformOrigin = TransformOrigin(0.5f, 0f)
                             alpha = opacity
                             cameraDistance = maxOf(8f, g.perspectiveP * 0.05f) * density
-                            if (darkenAlpha > 0f) {
-                                compositingStrategy = CompositingStrategy.Offscreen
-                            }
-                        }
-                        .then(
-                            if (darkenAlpha > 0f) {
-                                Modifier.drawWithContent {
-                                    drawContent()
-                                    drawRect(
-                                        color = Color.Black.copy(alpha = darkenAlpha),
-                                        blendMode = BlendMode.SrcAtop,
-                                    )
-                                }
-                            } else {
-                                Modifier
-                            },
-                        ),
+                        },
                 ) {
                     CrateFolderCard(
                         folder = folder,
@@ -295,6 +276,7 @@ fun CrateStack(
                         tabHeight = g.tabHeightDp.dp,
                         isLastPlayed = lastPlayedFolderPath == folder.path ||
                             (lastPlayedFolderPath == null && i == 1),
+                        darkenAlpha = darkenAlpha,
                         previewVideos = previewsForFolder(folder),
                         onOpenFolder = { onOpenFolder(folder) },
                     )
