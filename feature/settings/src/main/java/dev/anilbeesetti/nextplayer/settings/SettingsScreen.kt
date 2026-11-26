@@ -1,5 +1,6 @@
 package dev.anilbeesetti.nextplayer.settings
 
+import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.anilbeesetti.nextplayer.core.ui.R
@@ -52,6 +54,10 @@ fun SettingsScreen(output: SettingsOutput) {
 )
 @Composable
 private fun SettingsScreenContent(onAction: (SettingsAction) -> Unit) {
+    val context = LocalContext.current
+    val isDebug = remember(context) {
+        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
     val settingRows = remember { SettingRow.entries }
     val focusState = rememberRestorableFocusState()
 
@@ -96,9 +102,23 @@ private fun SettingsScreenContent(onAction: (SettingsAction) -> Unit) {
                         icon = row.icon,
                         onClick = { onAction(SettingsAction.OpenSetting(row.setting)) },
                         isFirstItem = index == 0,
-                        isLastItem = index == settingRows.lastIndex,
+                        isLastItem = !isDebug && index == settingRows.lastIndex,
                     )
                 }
+            }
+            if (isDebug) {
+                ClickablePreferenceItem(
+                    modifier = Modifier.restorableFocusItem(
+                        state = focusState,
+                        "CRATE_CARD_PREVIEW",
+                    ),
+                    title = "Crate Card Debug",
+                    description = "Phase 1 single folder card preview",
+                    icon = NextIcons.BugReport,
+                    onClick = { onAction(SettingsAction.OpenSetting(Setting.CRATE_CARD_PREVIEW)) },
+                    isFirstItem = false,
+                    isLastItem = true,
+                )
             }
         }
     }
@@ -113,6 +133,7 @@ enum class Setting {
     SUBTITLE,
     GENERAL,
     ABOUT,
+    CRATE_CARD_PREVIEW,
 }
 
 private enum class SettingRow(
