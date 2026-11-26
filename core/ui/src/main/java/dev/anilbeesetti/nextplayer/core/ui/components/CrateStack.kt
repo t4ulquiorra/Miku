@@ -1,6 +1,9 @@
 package dev.anilbeesetti.nextplayer.core.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -12,18 +15,29 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.anilbeesetti.nextplayer.core.model.Folder
 import dev.anilbeesetti.nextplayer.core.ui.theme.LocalAppAccent
+import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 private val ORG_X = floatArrayOf(
@@ -37,6 +51,33 @@ private val ORG_R = floatArrayOf(
 )
 
 private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+
+@Stable
+class CrateStackState(initialPos: Float = 0f) {
+    var pos by mutableFloatStateOf(initialPos)
+        internal set
+    var target by mutableFloatStateOf(initialPos)
+        internal set
+    internal var vel by mutableFloatStateOf(0f)
+    internal var isDragging by mutableStateOf(false)
+
+    fun snapTo(newPos: Float, maxIndex: Int) {
+        val clamped = newPos.coerceIn(0f, maxIndex.coerceAtLeast(0).toFloat())
+        isDragging = false
+        vel = 0f
+        pos = clamped
+        target = clamped
+    }
+
+    fun animateTo(index: Int, maxIndex: Int) {
+        isDragging = false
+        target = index.coerceIn(0, maxIndex.coerceAtLeast(0)).toFloat()
+    }
+}
+
+@Composable
+fun rememberCrateStackState(initialPos: Float = 0f): CrateStackState =
+    remember { CrateStackState(initialPos) }
 
 data class CrateSolveResult(
     val ok: Boolean,
@@ -164,28 +205,57 @@ fun solveCrateLayout(
 }
 
 /**
- * Adaptive 3D folder stack ported from design/CRATE_SPEC.md sections 3 & 4
+ * Adaptive 3D folder stack ported from design/CRATE_SPEC.md sections 3, 4 & 5
  * and design/crate_adaptive.html.
  */
 @Composable
 fun CrateStack(
     folders: List<Folder>,
-    pos: Float,
+    state: CrateStackState = rememberCrateStackState(),
     modifier: Modifier = Modifier,
     lastPlayedFolderPath: String? = null,
     previewsForFolder: (Folder) -> List<CrateCardVideoPreview> = { emptyList() },
-    onOpenFolder: (Folder) -> Unit = {},
+    onOpenFolder: (Int) -> Unit = {},
     onSolveChanged: ((CrateSolveResult) -> Unit)? = null,
 ) {
     if (folders.isEmpty()) return
     val density = LocalDensity.current.density
+    val maxIndex = folders.lastIndex
+
+    // Spring animation loop: runs only while moving and not dragging
+    LaunchedEffect(state.isDragging, state.target, maxIndex) {
+        if (state.isDragging) return@LaunchedEffect
+        var lastNanos = 0L
+        while (abs(state.target - state.pos) > 0.0005f || abs(state.vel) > 0.0005f) {
+            withFrameNanos { now ->
+                if (lastNanos != 0L) {
+                    val dtFrames = ((now - lastNanos) / (1_000_000_000f / 60f)).coerceIn(0.1f, 3f)
+                    val dv = state.target - state.pos
+                    val decay = 0.74f.pow(dtFrames)
+                    state.vel = (state.vel + dv * 0.13f * dtFrames) * decay
+                    state.pos += state.vel * dtFrames
+                }
+                lastNanos = now
+            }
+        }
+        if (state.pos != state.target) {
+            state.pos = state.target
+        }
+        state.vel = 0f
+    }
 
     BoxWithConstraints(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .clipToBounds(),
     ) {
         val aw = maxWidth.value
         val ah = maxHeight.value
-        val g = solveCrateLayout(aw, ah, folders.size)
+
+        // Only recompute layout when available area or folder count changes
+        val g = remember(aw, ah, folders.size) {
+            solveCrateLayout(aw, ah, folders.size)
+        }
         LaunchedEffect(g) {
             onSolveChanged?.invoke(g)
         }
@@ -203,14 +273,61 @@ fun CrateStack(
         val passY = ch * lerp(1.36f, 0.78f, g.t)
         val lim = maxOf(2f, g.behindCount - 2.5f)
         val kWidth = cw / 344f
+        val perFolderPx = maxOf(40f, g.riseDp * 2.8f) * density
+
+        val currentPos = state.pos
+        val frontRounded = currentPos.roundToInt().coerceIn(0, maxIndex)
 
         // Visible window: -1.7 < d < n + 1.4, ordered back-to-front so nearest is on top
         val visibleIndices = folders.indices
-            .map { i -> i to (i - pos) }
+            .map { i -> i to (i - currentPos) }
             .filter { (_, d) -> d > -1.7f && d < g.behindCount + 1.4f }
             .sortedByDescending { (_, d) -> d }
 
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(perFolderPx, maxIndex) {
+                    var dragStartPos = 0f
+                    var lastTimeMs = 0L
+                    var lastPos = 0f
+                    var velPerSec = 0f
+
+                    detectVerticalDragGestures(
+                        onDragStart = {
+                            state.isDragging = true
+                            state.vel = 0f
+                            dragStartPos = state.pos
+                            lastPos = state.pos
+                            lastTimeMs = System.nanoTime() / 1_000_000L
+                            velPerSec = 0f
+                        },
+                        onDragEnd = {
+                            state.isDragging = false
+                            val projected = state.pos + velPerSec * 0.24f
+                            state.target = projected.roundToInt().coerceIn(0, maxIndex).toFloat()
+                            state.vel = 0f
+                        },
+                        onDragCancel = {
+                            state.isDragging = false
+                            state.target = state.pos.roundToInt().coerceIn(0, maxIndex).toFloat()
+                            state.vel = 0f
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            val deltaFolders = dragAmount / perFolderPx
+                            val nextPos = (state.pos + deltaFolders).coerceIn(-0.3f, maxIndex + 0.3f)
+                            val nowMs = System.nanoTime() / 1_000_000L
+                            val dtMs = (nowMs - lastTimeMs).coerceAtLeast(1L)
+                            velPerSec = ((nextPos - lastPos) / dtMs.toFloat()) * 1000f
+                            lastPos = nextPos
+                            lastTimeMs = nowMs
+                            state.pos = nextPos
+                            state.target = nextPos
+                        },
+                    )
+                },
+        ) {
             visibleIndices.forEach { (i, d) ->
                 val folder = folders[i]
                 val ease = if (d > 0f) minOf(1f, d * 1.1f) else 0f
@@ -278,16 +395,28 @@ fun CrateStack(
                             (lastPlayedFolderPath == null && i == 1),
                         darkenAlpha = darkenAlpha,
                         previewVideos = previewsForFolder(folder),
-                        onOpenFolder = { onOpenFolder(folder) },
+                        onOpenFolder = {
+                            if (i == frontRounded) {
+                                onOpenFolder(i)
+                            } else {
+                                state.animateTo(i, maxIndex)
+                            }
+                        },
+                        onTabClick = {
+                            if (abs(i - state.pos) > 0.4f) {
+                                state.animateTo(i, maxIndex)
+                            }
+                        },
                     )
                 }
             }
 
-            // Right-edge ruler
+            // Right-edge ruler (tap or drag to jump through folders)
             if (folders.size >= 2) {
                 CrateRuler(
                     totalFolders = folders.size,
-                    activeIndex = pos.roundToInt().coerceIn(0, folders.lastIndex),
+                    activeIndex = frontRounded,
+                    onJumpTo = { idx -> state.animateTo(idx, maxIndex) },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 6.dp, top = 6.dp, bottom = 6.dp)
@@ -303,11 +432,40 @@ fun CrateStack(
 private fun CrateRuler(
     totalFolders: Int,
     activeIndex: Int,
+    onJumpTo: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val accent = LocalAppAccent.current
+    val density = LocalDensity.current.density
+
     BoxWithConstraints(
-        modifier = modifier.width(22.dp),
+        modifier = modifier
+            .width(22.dp)
+            .pointerInput(totalFolders) {
+                val hDp = size.height / density
+                val step = minOf(18f, hDp / (totalFolders - 1))
+                val used = step * (totalFolders - 1)
+                val y0 = (hDp - used) / 2f
+
+                fun jumpAtY(py: Float) {
+                    val yDp = py / density
+                    val idx = ((yDp - y0) / step).roundToInt().coerceIn(0, totalFolders - 1)
+                    onJumpTo(idx)
+                }
+
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    down.consume()
+                    jumpAtY(down.position.y)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        change.consume()
+                        jumpAtY(change.position.y)
+                    }
+                }
+            },
     ) {
         val h: Dp = maxHeight
         val step = minOf(18.dp, h / (totalFolders - 1))

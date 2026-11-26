@@ -51,6 +51,7 @@ import dev.anilbeesetti.nextplayer.core.ui.components.CrateFolderCard
 import dev.anilbeesetti.nextplayer.core.ui.components.CrateSolveResult
 import dev.anilbeesetti.nextplayer.core.ui.components.CrateStack
 import dev.anilbeesetti.nextplayer.core.ui.components.NextTopAppBar
+import dev.anilbeesetti.nextplayer.core.ui.components.rememberCrateStackState
 import dev.anilbeesetti.nextplayer.core.ui.designsystem.NextIcons
 import dev.anilbeesetti.nextplayer.core.ui.theme.JetBrainsMono
 import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeBg
@@ -339,10 +340,11 @@ private fun SingleCardDebugPane() {
 private fun StackDebugPane() {
     var winW by remember { mutableFloatStateOf(1280f) }
     var winH by remember { mutableFloatStateOf(800f) }
-    var pos by remember { mutableFloatStateOf(1f) }
+    val stackState = rememberCrateStackState(initialPos = 1f)
     var statusBar by remember { mutableStateOf(false) }
     var controlsExpanded by remember { mutableStateOf(true) }
     var lastSolve by remember { mutableStateOf<CrateSolveResult?>(null) }
+    var openedFolderName by remember { mutableStateOf<String?>(null) }
 
     val folders = remember {
         STACK_NAMES.mapIndexed { i, name ->
@@ -391,25 +393,34 @@ private fun StackDebugPane() {
             }
         }
 
-        // Info line + collapsible toggle
+        // Info line + open feedback + collapsible toggle
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(
-                text = lastSolve?.let { r ->
-                    val cw = r.cardWidthDp.roundToInt()
-                    val ch = r.cardHeightDp.roundToInt()
-                    val pct = (r.scaleOfApproved * 100f).roundToInt()
-                    val behind = r.behindCount
-                    "Area ${wInt}×${crateH.roundToInt()} → card ${cw}×${ch} (${"%.2f".format(r.shape)}, ${pct}%) · $behind behind · pos=${"%.2f".format(pos)}"
-                } ?: "Area ${wInt}×${crateH.roundToInt()}",
-                fontFamily = JetBrainsMono,
-                fontSize = 11.sp,
-                color = PrototypeInk,
-                modifier = Modifier.weight(1f),
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = lastSolve?.let { r ->
+                        val cw = r.cardWidthDp.roundToInt()
+                        val ch = r.cardHeightDp.roundToInt()
+                        val pct = (r.scaleOfApproved * 100f).roundToInt()
+                        val behind = r.behindCount
+                        "Area ${wInt}×${crateH.roundToInt()} → card ${cw}×${ch} (${"%.2f".format(r.shape)}, ${pct}%) · $behind behind · pos=${"%.2f".format(stackState.pos)}"
+                    } ?: "Area ${wInt}×${crateH.roundToInt()}",
+                    fontFamily = JetBrainsMono,
+                    fontSize = 11.sp,
+                    color = PrototypeInk,
+                )
+                openedFolderName?.let { name ->
+                    Text(
+                        text = "OPEN: $name",
+                        fontFamily = JetBrainsMono,
+                        fontSize = 11.sp,
+                        color = Color(0xFFFF5A2E),
+                    )
+                }
+            }
             FilterChip(
                 selected = controlsExpanded,
                 onClick = { controlsExpanded = !controlsExpanded },
@@ -473,14 +484,14 @@ private fun StackDebugPane() {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                text = "pos: ${"%.2f".format(pos)}",
+                text = "pos: ${"%.2f".format(stackState.pos)}",
                 fontFamily = JetBrainsMono,
                 fontSize = 10.sp,
                 color = PrototypeInk,
             )
             Slider(
-                value = pos,
-                onValueChange = { pos = it },
+                value = stackState.pos.coerceIn(0f, folders.lastIndex.toFloat()),
+                onValueChange = { stackState.snapTo(it, folders.lastIndex) },
                 valueRange = 0f..(folders.lastIndex).toFloat(),
                 modifier = Modifier
                     .weight(1f)
@@ -547,8 +558,11 @@ private fun StackDebugPane() {
                     ) {
                         CrateStack(
                             folders = folders,
-                            pos = pos,
+                            state = stackState,
                             lastPlayedFolderPath = folders.getOrNull(1)?.path,
+                            onOpenFolder = { idx ->
+                                openedFolderName = folders.getOrNull(idx)?.name
+                            },
                             onSolveChanged = { lastSolve = it },
                         )
                     }
