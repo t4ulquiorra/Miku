@@ -463,7 +463,7 @@ fun CrateFolderCard(
                     previewVideos = previewVideos,
                     cqw = ::cqw,
                     cqh = ::cqh,
-                    toCardSp = { it.toCardSp() },
+                    toCardSp = { this.toCardSp() },
                     onOpenFolder = onOpenFolder,
                 )
             }
