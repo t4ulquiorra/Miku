@@ -228,6 +228,7 @@ fun CrateStack(
     state: CrateStackState = rememberCrateStackState(),
     modifier: Modifier = Modifier,
     lastPlayedFolderPath: String? = null,
+    bottomReserved: Dp = 0.dp,
     showHitAreas: Boolean = false,
     useUnknownPlaceholders: Boolean = false,
     openOnFrontCardTap: Boolean = false,
@@ -314,7 +315,7 @@ fun CrateStack(
             .clipToBounds(),
     ) {
         val aw = maxWidth.value
-        val ah = maxHeight.value
+        val ah = (maxHeight - bottomReserved).value.coerceAtLeast(1f)
 
         // Only recompute layout when available area or folder count changes
         val g = remember(aw, ah, folders.size) {
@@ -417,6 +418,8 @@ fun CrateStack(
                                 val vis = d > -1.7f && d < g.behindCount + 1.4f
                                 if (!vis) {
                                     alpha = 0f
+                                    translationX = -100_000f
+                                    translationY = -100_000f
                                     return@graphicsLayer
                                 }
                                 val ease = if (d > 0f) minOf(1f, d * 1.1f) else 0f
@@ -489,17 +492,17 @@ fun CrateStack(
                                 val front = posProvider().roundToInt().coerceIn(0, maxIndex)
                                 if (i == front) {
                                     onOpenFolder(i)
-                                } else {
+                                } else if ((i - posProvider()) > 0.4f) {
                                     state.animateTo(i, maxIndex)
                                 }
                             },
                             onTabClick = {
-                                if (abs(i - posProvider()) > 0.4f) {
+                                if ((i - posProvider()) > 0.4f) {
                                     state.animateTo(i, maxIndex)
                                 }
                             },
                             onBandClick = {
-                                if (abs(i - posProvider()) > 0.4f) {
+                                if ((i - posProvider()) > 0.4f) {
                                     state.animateTo(i, maxIndex)
                                 }
                             },

@@ -505,6 +505,7 @@ internal fun MediaPickerScreenContent(
                                     folders = folders,
                                     state = stackState,
                                     lastPlayedFolderPath = state.recentlyPlayedFolder?.path,
+                                    bottomReserved = bottomReserved,
                                     useUnknownPlaceholders = true,
                                     openOnFrontCardTap = true,
                                     previewsForFolder = { f -> state.cratePreviewCache[f.path].orEmpty() },
@@ -539,9 +540,7 @@ internal fun MediaPickerScreenContent(
                                             onAction(MediaPickerAction.OnFolderClick(folderPath = f.path))
                                         }
                                     },
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(bottom = bottomReserved),
+                                    modifier = Modifier.fillMaxSize(),
                                 )
                             } else {
                                 MediaView(
