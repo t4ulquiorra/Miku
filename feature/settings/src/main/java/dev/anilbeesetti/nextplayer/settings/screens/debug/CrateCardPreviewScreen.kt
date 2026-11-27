@@ -354,7 +354,7 @@ private fun StackDebugPane(
 
     var winW by remember { mutableFloatStateOf(1280f) }
     var winH by remember { mutableFloatStateOf(800f) }
-    val stackState = rememberCrateStackState(initialPos = 1f)
+    val stackState = rememberCrateStackState(initialPos = 0f)
     var statusBar by remember { mutableStateOf(false) }
     var controlsExpanded by remember { mutableStateOf(true) }
     var showHitAreas by remember { mutableStateOf(false) }
@@ -379,6 +379,13 @@ private fun StackDebugPane(
     }
 
     val activeFolders = if (useRealData) uiState.folders else fakeFolders
+
+    LaunchedEffect(activeFolders.size) {
+        val maxIdx = (activeFolders.size - 1).coerceAtLeast(0)
+        if (stackState.pos > maxIdx) {
+            stackState.snapTo(newPos = maxIdx.toFloat(), maxIndex = maxIdx)
+        }
+    }
 
     // Load full front video list & front-3 preview thumbnails ONLY when settled (not dragging/flinging)
     LaunchedEffect(useRealData, stackState.isMoving, stackState.target, activeFolders.size) {
@@ -473,7 +480,7 @@ private fun StackDebugPane(
                     useRealData = !useRealData
                     val targetList = if (useRealData) uiState.folders else fakeFolders
                     stackState.snapTo(
-                        newPos = if (targetList.size > 1) 1f else 0f,
+                        newPos = 0f,
                         maxIndex = (targetList.size - 1).coerceAtLeast(0),
                     )
                 },
