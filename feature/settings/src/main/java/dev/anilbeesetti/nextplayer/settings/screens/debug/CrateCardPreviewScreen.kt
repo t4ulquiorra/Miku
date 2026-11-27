@@ -343,6 +343,7 @@ private fun StackDebugPane() {
     val stackState = rememberCrateStackState(initialPos = 1f)
     var statusBar by remember { mutableStateOf(false) }
     var controlsExpanded by remember { mutableStateOf(true) }
+    var showHitAreas by remember { mutableStateOf(false) }
     var lastSolve by remember { mutableStateOf<CrateSolveResult?>(null) }
     var openedFolderName by remember { mutableStateOf<String?>(null) }
 
@@ -427,6 +428,11 @@ private fun StackDebugPane() {
                     )
                 }
             }
+            FilterChip(
+                selected = showHitAreas,
+                onClick = { showHitAreas = !showHitAreas },
+                label = { Text("Hit areas", fontSize = 10.sp) },
+            )
             FilterChip(
                 selected = controlsExpanded,
                 onClick = { controlsExpanded = !controlsExpanded },
@@ -566,6 +572,7 @@ private fun StackDebugPane() {
                             folders = folders,
                             state = stackState,
                             lastPlayedFolderPath = folders.getOrNull(1)?.path,
+                            showHitAreas = showHitAreas,
                             onOpenFolder = { idx ->
                                 openedFolderName = folders.getOrNull(idx)?.name
                             },

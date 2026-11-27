@@ -7,8 +7,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -176,9 +178,12 @@ fun CrateFolderCard(
     isLastPlayed: Boolean = false,
     darkenAlphaProvider: () -> Float = { 0f },
     detailVisibleProvider: () -> Boolean = { true },
+    visibleBandHeight: Dp? = null,
+    showHitAreas: Boolean = false,
     previewVideos: List<CrateCardVideoPreview> = emptyList(),
     onOpenFolder: () -> Unit = {},
     onTabClick: (() -> Unit)? = null,
+    onBandClick: (() -> Unit)? = null,
     onCardClick: (() -> Unit)? = null,
     onRecompose: (() -> Unit)? = null,
 ) {
@@ -311,6 +316,13 @@ fun CrateFolderCard(
                         Modifier
                     },
                 )
+                .then(
+                    if (showHitAreas && onTabClick != null) {
+                        Modifier.border(1.5.dp, Color(0xFFFFC247), tabShape)
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(
                     top = resolvedTabH * 0.2f,
                     start = resolvedTabH * 0.3f,
@@ -395,7 +407,10 @@ fun CrateFolderCard(
                             onClick = onCardClick,
                         )
                     } else {
-                        Modifier
+                        // Swallow body taps on the front card so they don't fall through
+                        Modifier.pointerInput(Unit) {
+                            detectTapGestures { }
+                        }
                     },
                 ),
         ) {
@@ -528,6 +543,7 @@ fun CrateFolderCard(
                             wide = wide,
                             heightClass = heightClass,
                             isVeryNarrow = isVeryNarrow,
+                            showHitAreas = showHitAreas,
                             previewVideos = previewVideos,
                             cqw = ::cqw,
                             cqh = ::cqh,
@@ -536,6 +552,29 @@ fun CrateFolderCard(
                         )
                     }
                 }
+            }
+
+            // Visible top band tap target for back cards only
+            if (visibleBandHeight != null && onBandClick != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .fillMaxWidth()
+                        .height(visibleBandHeight)
+                        .zIndex(5f)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onBandClick,
+                        )
+                        .then(
+                            if (showHitAreas) {
+                                Modifier.border(1.5.dp, Color(0xFFFFC247))
+                            } else {
+                                Modifier
+                            },
+                        ),
+                )
             }
 
             // Optional rotated "N NEW" stamp
@@ -662,6 +701,7 @@ private fun CardBottomBlock(
     wide: Boolean,
     heightClass: CardHeightClass,
     isVeryNarrow: Boolean,
+    showHitAreas: Boolean,
     previewVideos: List<CrateCardVideoPreview>,
     cqw: (Float) -> Dp,
     cqh: (Float) -> Dp,
@@ -698,6 +738,7 @@ private fun CardBottomBlock(
             OpenFolderKey(
                 wide = wide,
                 heightClass = heightClass,
+                showHitAreas = showHitAreas,
                 cqw = cqw,
                 cqh = cqh,
                 toCardSp = toCardSp,
@@ -755,6 +796,7 @@ private fun CardBottomBlock(
                 OpenFolderKey(
                     wide = true,
                     heightClass = heightClass,
+                    showHitAreas = showHitAreas,
                     cqw = cqw,
                     cqh = cqh,
                     toCardSp = toCardSp,
@@ -823,6 +865,7 @@ private fun CardBottomBlock(
                     OpenFolderKey(
                         wide = false,
                         heightClass = heightClass,
+                        showHitAreas = showHitAreas,
                         cqw = cqw,
                         cqh = cqh,
                         toCardSp = toCardSp,
@@ -1023,6 +1066,7 @@ private fun ThumbsCluster(
 private fun OpenFolderKey(
     wide: Boolean,
     heightClass: CardHeightClass,
+    showHitAreas: Boolean,
     cqw: (Float) -> Dp,
     cqh: (Float) -> Dp,
     toCardSp: Dp.() -> TextUnit,
@@ -1083,6 +1127,13 @@ private fun OpenFolderKey(
                     interactionSource = interactionSource,
                     indication = null,
                     onClick = onClick,
+                )
+                .then(
+                    if (showHitAreas) {
+                        Modifier.border(1.5.dp, Color(0xFFFF4081), keyShape)
+                    } else {
+                        Modifier
+                    },
                 )
                 .padding(horizontal = keyPadH),
         ) {

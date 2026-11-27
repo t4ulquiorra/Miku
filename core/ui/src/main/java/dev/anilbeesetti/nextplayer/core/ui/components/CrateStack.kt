@@ -1,15 +1,15 @@
 package dev.anilbeesetti.nextplayer.core.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -227,6 +227,7 @@ fun CrateStack(
     state: CrateStackState = rememberCrateStackState(),
     modifier: Modifier = Modifier,
     lastPlayedFolderPath: String? = null,
+    showHitAreas: Boolean = false,
     previewsForFolder: (Folder) -> List<CrateCardVideoPreview> = { emptyList() },
     onOpenFolder: (Int) -> Unit = {},
     onSolveChanged: ((CrateSolveResult) -> Unit)? = null,
@@ -334,160 +335,192 @@ fun CrateStack(
         val kWidth = cw / 344f
         val perFolderPx = maxOf(40f, g.riseDp * 2.8f) * density
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(perFolderPx, maxIndex) {
-                    val velocityTracker = VelocityTracker()
-                    var totalDragY = 0f
+        // Ruler strip: 15dp tick column + up to 12dp padding on left (total 33dp wide), over stack height
+        val rulerWidthDp = 33f
+        val rulerLeftDp = (aw - rulerWidthDp).coerceAtLeast(0f)
+        val stackTopDp = (frontTop + farTop).coerceAtLeast(0f)
+        val stackHeightDp = ext.coerceAtLeast(1f)
 
-                    detectVerticalDragGestures(
-                        onDragStart = {
-                            state.isDragging = true
-                            state.vel = 0f
-                            totalDragY = 0f
-                            velocityTracker.resetTracking()
-                        },
-                        onDragEnd = {
-                            state.isDragging = false
-                            val velPxPerSec = velocityTracker.calculateVelocity().y
-                            val velFoldersPerSec = velPxPerSec / perFolderPx
-                            val projected = state.pos + velFoldersPerSec * 0.24f
-                            state.target = projected.roundToInt().coerceIn(0, maxIndex).toFloat()
-                            state.vel = 0f
-                        },
-                        onDragCancel = {
-                            state.isDragging = false
-                            state.target = state.pos.roundToInt().coerceIn(0, maxIndex).toFloat()
-                            state.vel = 0f
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            totalDragY += dragAmount
-                            velocityTracker.addPosition(change.uptimeMillis, Offset(0f, totalDragY))
-                            val nextPos = (state.pos + dragAmount / perFolderPx)
-                                .coerceIn(-0.3f, maxIndex + 0.3f)
-                            state.pos = nextPos
-                            state.target = nextPos
+        // Stack drag bounds: stack width (with organic margin) minus the ruler strip
+        val maxOrgXDp = 24f * kWidth
+        val dragLeftDp = (fx - maxOrgXDp).coerceAtLeast(0f)
+        val dragRightDp = minOf(fx + cw + maxOrgXDp, rulerLeftDp).coerceAtLeast(dragLeftDp)
+        val dragWidthDp = (dragRightDp - dragLeftDp).coerceAtLeast(0f)
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Stack drag area only (never covers empty margins or the ruler strip)
+            Box(
+                modifier = Modifier
+                    .offset(x = dragLeftDp.dp, y = stackTopDp.dp)
+                    .width(dragWidthDp.dp)
+                    .height(stackHeightDp.dp)
+                    .then(
+                        if (showHitAreas) {
+                            Modifier.border(1.5.dp, Color(0xFF4CAF50))
+                        } else {
+                            Modifier
                         },
                     )
-                },
-        ) {
-            // Static back-to-front order (nearest folder always on top, zero zIndex recomposition)
-            for (i in folders.lastIndex downTo 0) {
-                val folder = folders[i]
-                val xoBase = ORG_X[i % ORG_X.size] * kWidth
-                val rzBase = ORG_R[i % ORG_R.size]
-                val staticZ = (folders.size - i).toFloat()
+                    .pointerInput(perFolderPx, maxIndex) {
+                        val velocityTracker = VelocityTracker()
+                        var totalDragY = 0f
 
-                Box(
-                    modifier = Modifier
-                        .offset(x = fx.dp, y = fy.dp)
-                        .zIndex(staticZ)
-                        .graphicsLayer {
-                            val d = i - posProvider()
-                            val vis = d > -1.7f && d < g.behindCount + 1.4f
-                            if (!vis) {
-                                alpha = 0f
-                                return@graphicsLayer
-                            }
-                            val ease = if (d > 0f) minOf(1f, d * 1.1f) else 0f
-                            val y: Float
-                            val z: Float
-                            val rx: Float
-                            val o: Float
-                            if (d >= 0f) {
-                                y = -d * g.riseDp
-                                z = -d * g.stepZ
-                                rx = 5f
-                                o = ((g.behindCount + 0.5f - d) / 0.5f).coerceIn(0f, 1f)
-                            } else {
-                                y = -d * passY
-                                z = -d * g.stepZ * 1.9f
-                                rx = d * 30f
-                                o = maxOf(0f, 1f + d * 1.05f)
-                            }
-                            val scl = (g.perspectiveP / (g.perspectiveP - z)).coerceAtLeast(0.05f)
-                            val projX = (xoBase * ease) * scl
-                            val projY = oy + (y - oy) * scl
+                        detectVerticalDragGestures(
+                            onDragStart = {
+                                state.isDragging = true
+                                state.vel = 0f
+                                totalDragY = 0f
+                                velocityTracker.resetTracking()
+                            },
+                            onDragEnd = {
+                                state.isDragging = false
+                                val velPxPerSec = velocityTracker.calculateVelocity().y
+                                val velFoldersPerSec = velPxPerSec / perFolderPx
+                                val projected = state.pos + velFoldersPerSec * 0.24f
+                                state.target = projected.roundToInt().coerceIn(0, maxIndex).toFloat()
+                                state.vel = 0f
+                            },
+                            onDragCancel = {
+                                state.isDragging = false
+                                state.target = state.pos.roundToInt().coerceIn(0, maxIndex).toFloat()
+                                state.vel = 0f
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                totalDragY += dragAmount
+                                velocityTracker.addPosition(change.uptimeMillis, Offset(0f, totalDragY))
+                                val nextPos = (state.pos + dragAmount / perFolderPx)
+                                    .coerceIn(-0.3f, maxIndex + 0.3f)
+                                state.pos = nextPos
+                                state.target = nextPos
+                            },
+                        )
+                    },
+            ) {
+                // Static back-to-front order (nearest folder always on top, zero zIndex recomposition)
+                for (i in folders.lastIndex downTo 0) {
+                    val folder = folders[i]
+                    val xoBase = ORG_X[i % ORG_X.size] * kWidth
+                    val rzBase = ORG_R[i % ORG_R.size]
+                    val staticZ = (folders.size - i).toFloat()
 
-                            translationX = projX * density
-                            translationY = projY * density
-                            scaleX = scl
-                            scaleY = scl
-                            rotationX = rx
-                            rotationZ = rzBase * ease
-                            transformOrigin = TransformOrigin(0.5f, 0f)
-                            alpha = o
-                            compositingStrategy = CompositingStrategy.ModulateAlpha
-                            cameraDistance = maxOf(8f, g.perspectiveP * 0.05f) * density
-                        }
-                        .drawWithContent {
-                            val d = i - posProvider()
-                            if (d > -1.7f && d < g.behindCount + 1.4f) {
-                                drawContent()
-                            }
-                        },
-                ) {
-                    CrateFolderCard(
-                        folder = folder,
-                        index = i,
-                        totalFolders = folders.size,
-                        cardWidth = cw.dp,
-                        cardHeight = ch.dp,
-                        tabHeight = g.tabHeightDp.dp,
-                        isLastPlayed = lastPlayedFolderPath == folder.path ||
-                            (lastPlayedFolderPath == null && i == 1),
-                        darkenAlphaProvider = {
-                            val d = i - posProvider()
-                            if (d <= 0.02f) {
-                                0f
-                            } else {
-                                var br = maxOf(0.5f, 1f - d * 0.08f)
-                                if (d > lim) {
-                                    br *= maxOf(0.2f, 1f - (d - lim) * 0.32f)
+                    Box(
+                        modifier = Modifier
+                            .offset(x = (fx - dragLeftDp).dp, y = (fy - stackTopDp).dp)
+                            .zIndex(staticZ)
+                            .graphicsLayer {
+                                val d = i - posProvider()
+                                val vis = d > -1.7f && d < g.behindCount + 1.4f
+                                if (!vis) {
+                                    alpha = 0f
+                                    return@graphicsLayer
                                 }
-                                (1f - br).coerceIn(0f, 0.9f)
+                                val ease = if (d > 0f) minOf(1f, d * 1.1f) else 0f
+                                val y: Float
+                                val z: Float
+                                val rx: Float
+                                val o: Float
+                                if (d >= 0f) {
+                                    y = -d * g.riseDp
+                                    z = -d * g.stepZ
+                                    rx = 5f
+                                    o = ((g.behindCount + 0.5f - d) / 0.5f).coerceIn(0f, 1f)
+                                } else {
+                                    y = -d * passY
+                                    z = -d * g.stepZ * 1.9f
+                                    rx = d * 30f
+                                    o = maxOf(0f, 1f + d * 1.05f)
+                                }
+                                val scl = (g.perspectiveP / (g.perspectiveP - z)).coerceAtLeast(0.05f)
+                                val projX = (xoBase * ease) * scl
+                                val projY = oy + (y - oy) * scl
+
+                                translationX = projX * density
+                                translationY = projY * density
+                                scaleX = scl
+                                scaleY = scl
+                                rotationX = rx
+                                rotationZ = rzBase * ease
+                                transformOrigin = TransformOrigin(0.5f, 0f)
+                                alpha = o
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
+                                cameraDistance = maxOf(8f, g.perspectiveP * 0.05f) * density
                             }
-                        },
-                        detailVisibleProvider = {
-                            (i - posProvider()) <= 2.5f
-                        },
-                        previewVideos = previewsForFolder(folder),
-                        onOpenFolder = {
-                            val front = posProvider().roundToInt().coerceIn(0, maxIndex)
-                            if (i == front) {
-                                onOpenFolder(i)
-                            } else {
-                                state.animateTo(i, maxIndex)
-                            }
-                        },
-                        onTabClick = {
-                            if (abs(i - posProvider()) > 0.4f) {
-                                state.animateTo(i, maxIndex)
-                            }
-                        },
-                        onRecompose = {
-                            state.totalCardRecomps++
-                            if (state.isMoving) {
-                                state.moveRecomps++
-                            }
-                        },
-                    )
+                            .drawWithContent {
+                                val d = i - posProvider()
+                                if (d > -1.7f && d < g.behindCount + 1.4f) {
+                                    drawContent()
+                                }
+                            },
+                    ) {
+                        CrateFolderCard(
+                            folder = folder,
+                            index = i,
+                            totalFolders = folders.size,
+                            cardWidth = cw.dp,
+                            cardHeight = ch.dp,
+                            tabHeight = g.tabHeightDp.dp,
+                            isLastPlayed = lastPlayedFolderPath == folder.path ||
+                                (lastPlayedFolderPath == null && i == 1),
+                            darkenAlphaProvider = {
+                                val d = i - posProvider()
+                                if (d <= 0.02f) {
+                                    0f
+                                } else {
+                                    var br = maxOf(0.5f, 1f - d * 0.08f)
+                                    if (d > lim) {
+                                        br *= maxOf(0.2f, 1f - (d - lim) * 0.32f)
+                                    }
+                                    (1f - br).coerceIn(0f, 0.9f)
+                                }
+                            },
+                            detailVisibleProvider = {
+                                (i - posProvider()) <= 2.5f
+                            },
+                            visibleBandHeight = g.riseDp.dp,
+                            showHitAreas = showHitAreas,
+                            previewVideos = previewsForFolder(folder),
+                            onOpenFolder = {
+                                val front = posProvider().roundToInt().coerceIn(0, maxIndex)
+                                if (i == front) {
+                                    onOpenFolder(i)
+                                } else {
+                                    state.animateTo(i, maxIndex)
+                                }
+                            },
+                            onTabClick = {
+                                if (abs(i - posProvider()) > 0.4f) {
+                                    state.animateTo(i, maxIndex)
+                                }
+                            },
+                            onBandClick = {
+                                if (abs(i - posProvider()) > 0.4f) {
+                                    state.animateTo(i, maxIndex)
+                                }
+                            },
+                            onRecompose = {
+                                state.totalCardRecomps++
+                                if (state.isMoving) {
+                                    state.moveRecomps++
+                                }
+                            },
+                        )
+                    }
                 }
             }
 
-            // Right-edge ruler (Canvas draws active tick from posProvider in draw phase)
+            // Right-edge ruler over the stack's height (consumes events; never triggers stack drag)
             if (folders.size >= 2) {
                 CrateRuler(
                     totalFolders = folders.size,
                     posProvider = posProvider,
                     maxIndex = maxIndex,
+                    showHitAreas = showHitAreas,
                     onJumpTo = { idx -> state.animateTo(idx, maxIndex) },
                     modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 6.dp, top = 6.dp, bottom = 6.dp)
-                        .fillMaxHeight()
+                        .offset(x = rulerLeftDp.dp, y = stackTopDp.dp)
+                        .width(rulerWidthDp.dp)
+                        .height(stackHeightDp.dp)
                         .zIndex(900f),
                 )
             }
@@ -500,6 +533,7 @@ private fun CrateRuler(
     totalFolders: Int,
     posProvider: () -> Float,
     maxIndex: Int,
+    showHitAreas: Boolean,
     onJumpTo: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -509,7 +543,13 @@ private fun CrateRuler(
 
     Canvas(
         modifier = modifier
-            .width(22.dp)
+            .then(
+                if (showHitAreas) {
+                    Modifier.border(1.5.dp, Color(0xFF00E5FF))
+                } else {
+                    Modifier
+                },
+            )
             .pointerInput(totalFolders) {
                 val hDp = size.height / density
                 val step = minOf(18f, hDp / (totalFolders - 1))
