@@ -65,6 +65,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -82,6 +83,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -98,6 +102,9 @@ import dev.anilbeesetti.nextplayer.core.model.MediaLayoutMode
 import dev.anilbeesetti.nextplayer.core.model.MediaViewMode
 import dev.anilbeesetti.nextplayer.core.model.PlaylistSummary
 import dev.anilbeesetti.nextplayer.core.model.Video
+import dev.anilbeesetti.nextplayer.core.ui.components.CrateStack
+import dev.anilbeesetti.nextplayer.core.ui.components.rememberCrateStackState
+import kotlin.math.roundToInt
 import dev.anilbeesetti.nextplayer.core.ui.R
 import dev.anilbeesetti.nextplayer.core.ui.base.DataState
 import dev.anilbeesetti.nextplayer.core.ui.components.BindTopLevelBottomBarVisible
@@ -191,6 +198,7 @@ internal fun MediaPickerScreenContent(
     var showQuickSettingsDialog by rememberSaveable { mutableStateOf(value = false) }
     var showRenameActionFor: Video? by rememberSaveable { mutableStateOf(value = null) }
     var showDeleteVideosConfirmation by rememberSaveable { mutableStateOf(value = false) }
+    var savedCrateFolderPath by rememberSaveable { mutableStateOf<String?>(value = null) }
 
     val mediaHolder = (state.mediaDataState as? DataState.Success)?.value
     val onFabClick = {
@@ -458,11 +466,78 @@ internal fun MediaPickerScreenContent(
                                 } else {
                                     navigationBottomPadding
                                 }
-                                CrateHome(
-                                    folders = mediaHolder.folders,
-                                    recentlyPlayedFolder = state.recentlyPlayedFolder,
-                                    onOpenFolder = {
-                                        onAction(MediaPickerAction.OnFolderClick(folderPath = it))
+                                val folders = mediaHolder.folders
+                                val initialIndex = remember(folders.isNotEmpty()) {
+                                    savedCrateFolderPath?.let { path ->
+                                        folders.indexOfFirst { it.path == path }.takeIf { it >= 0 }
+                                    } ?: 0
+                                }
+                                val stackState = rememberCrateStackState(initialPos = initialIndex.toFloat())
+
+                                LaunchedEffect(stackState.isMoving, stackState.pos, folders) {
+                                    if (!stackState.isMoving && folders.isNotEmpty()) {
+                                        val idx = stackState.pos.roundToInt().coerceIn(0, folders.lastIndex)
+                                        savedCrateFolderPath = folders[idx].path
+                                        onAction(MediaPickerAction.CrateSettledOnFolder(index = idx))
+                                    }
+                                }
+
+                                LaunchedEffect(folders) {
+                                    if (folders.isEmpty()) return@LaunchedEffect
+                                    val targetPath = savedCrateFolderPath
+                                    if (targetPath != null) {
+                                        val newIdx = folders.indexOfFirst { it.path == targetPath }
+                                        if (newIdx >= 0) {
+                                            if (stackState.pos.roundToInt() != newIdx && !stackState.isMoving) {
+                                                stackState.snapTo(newIdx.toFloat(), folders.lastIndex)
+                                            }
+                                        } else {
+                                            val clamped = stackState.pos.coerceIn(0f, folders.lastIndex.toFloat())
+                                            stackState.snapTo(clamped, folders.lastIndex)
+                                            savedCrateFolderPath = folders[clamped.roundToInt()].path
+                                        }
+                                    } else {
+                                        savedCrateFolderPath = folders[0].path
+                                    }
+                                }
+
+                                CrateStack(
+                                    folders = folders,
+                                    state = stackState,
+                                    lastPlayedFolderPath = state.recentlyPlayedFolder?.path,
+                                    useUnknownPlaceholders = true,
+                                    openOnFrontCardTap = true,
+                                    previewsForFolder = { f -> state.cratePreviewCache[f.path].orEmpty() },
+                                    thumbnailContent = { uriString, widthPx, heightPx, thumbMod ->
+                                        var settledUri by remember { mutableStateOf<String?>(null) }
+                                        LaunchedEffect(uriString, stackState.isMoving) {
+                                            if (!stackState.isMoving) {
+                                                settledUri = uriString
+                                            }
+                                        }
+                                        val activeUri = settledUri
+                                        if (activeUri != null) {
+                                            val req = remember(activeUri, widthPx, heightPx) {
+                                                ImageRequest.Builder(context)
+                                                    .data(activeUri)
+                                                    .size(widthPx, heightPx)
+                                                    .memoryCachePolicy(CachePolicy.ENABLED)
+                                                    .diskCachePolicy(CachePolicy.ENABLED)
+                                                    .build()
+                                            }
+                                            AsyncImage(
+                                                model = req,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = thumbMod,
+                                            )
+                                        }
+                                    },
+                                    onOpenFolder = { idx ->
+                                        folders.getOrNull(idx)?.let { f ->
+                                            savedCrateFolderPath = f.path
+                                            onAction(MediaPickerAction.OnFolderClick(folderPath = f.path))
+                                        }
                                     },
                                     modifier = Modifier
                                         .fillMaxSize()

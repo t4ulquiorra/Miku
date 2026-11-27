@@ -36,6 +36,7 @@ import dev.anilbeesetti.nextplayer.core.model.findClosestFolder
 import dev.anilbeesetti.nextplayer.core.ui.R
 import dev.anilbeesetti.nextplayer.core.ui.base.DataState
 import dev.anilbeesetti.nextplayer.core.ui.base.MviViewModel
+import dev.anilbeesetti.nextplayer.core.ui.components.CrateCardVideoPreview
 import dev.anilbeesetti.nextplayer.feature.videopicker.state.SelectionItem
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -94,6 +95,8 @@ class MediaPickerViewModel(
 
     private var mediaCollectJob: Job? = null
     private var transferJob: Job? = null
+    private var crateFrontVideosJob: Job? = null
+    private var crateNearbyPreviewsJob: Job? = null
 
     init {
         if (ContextCompat.checkSelfPermission(
@@ -183,6 +186,58 @@ class MediaPickerViewModel(
             )
 
             is MediaPickerAction.DismissAddToPlaylist -> dismissAddToPlaylist()
+
+            is MediaPickerAction.CrateSettledOnFolder -> onCrateSettledOnFolder(action.index)
+        }
+    }
+
+    private fun onCrateSettledOnFolder(index: Int) {
+        val folders = (stateInternal.value.mediaDataState as? DataState.Success)?.value?.folders ?: return
+        val frontFolder = folders.getOrNull(index) ?: return
+
+        if (stateInternal.value.settledCrateFolderPath != frontFolder.path) {
+            crateFrontVideosJob?.cancel()
+            crateFrontVideosJob = viewModelScope.launch {
+                getSortedVideosUseCase(frontFolder.path).collect { videos ->
+                    val direct = videos.filter { it.parentPath == frontFolder.path }
+                    val previews = direct.take(3).map { v ->
+                        CrateCardVideoPreview(
+                            title = v.displayName,
+                            durationMillis = v.duration,
+                            uriString = v.uriString,
+                        )
+                    }
+                    stateInternal.update { state ->
+                        state.copy(
+                            settledCrateFolderPath = frontFolder.path,
+                            settledCrateVideos = direct,
+                            cratePreviewCache = state.cratePreviewCache + (frontFolder.path to previews),
+                        )
+                    }
+                }
+            }
+        }
+
+        crateNearbyPreviewsJob?.cancel()
+        crateNearbyPreviewsJob = viewModelScope.launch {
+            for (offset in 1..2) {
+                val f = folders.getOrNull(index + offset) ?: continue
+                if (stateInternal.value.cratePreviewCache.containsKey(f.path)) continue
+                val videos = getSortedVideosUseCase(f.path).first()
+                val previews = videos
+                    .filter { it.parentPath == f.path }
+                    .take(3)
+                    .map { v ->
+                        CrateCardVideoPreview(
+                            title = v.displayName,
+                            durationMillis = v.duration,
+                            uriString = v.uriString,
+                        )
+                    }
+                stateInternal.update { state ->
+                    state.copy(cratePreviewCache = state.cratePreviewCache + (f.path to previews))
+                }
+            }
         }
     }
 
@@ -602,6 +657,9 @@ data class MediaPickerUiState(
     val transferFlow: TransferFlowState = TransferFlowState.Idle,
     val playlists: List<PlaylistSummary> = emptyList(),
     val addToPlaylistState: AddToPlaylistState = AddToPlaylistState(),
+    val cratePreviewCache: Map<String, List<CrateCardVideoPreview>> = emptyMap(),
+    val settledCrateFolderPath: String? = null,
+    val settledCrateVideos: List<Video> = emptyList(),
 ) {
     val recentlyPlayedFolder: Folder?
         get() = recentlyPlayedVideo?.let { video ->
@@ -663,4 +721,5 @@ sealed interface MediaPickerAction {
     data class AddSelectionToPlaylist(val playlistId: Long) : MediaPickerAction
     data class CreatePlaylistWithSelection(val name: String) : MediaPickerAction
     data object DismissAddToPlaylist : MediaPickerAction
+    data class CrateSettledOnFolder(val index: Int) : MediaPickerAction
 }

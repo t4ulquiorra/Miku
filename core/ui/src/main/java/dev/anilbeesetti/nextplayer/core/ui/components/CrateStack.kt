@@ -230,6 +230,7 @@ fun CrateStack(
     lastPlayedFolderPath: String? = null,
     showHitAreas: Boolean = false,
     useUnknownPlaceholders: Boolean = false,
+    openOnFrontCardTap: Boolean = false,
     previewsForFolder: (Folder) -> List<CrateCardVideoPreview> = { emptyList() },
     thumbnailContent: (@Composable (uriString: String, widthPx: Int, heightPx: Int, modifier: Modifier) -> Unit)? = null,
     onOpenFolder: (Int) -> Unit = {},
@@ -501,6 +502,16 @@ fun CrateStack(
                                 if (abs(i - posProvider()) > 0.4f) {
                                     state.animateTo(i, maxIndex)
                                 }
+                            },
+                            onCardClick = if (openOnFrontCardTap) {
+                                {
+                                    val front = posProvider().roundToInt().coerceIn(0, maxIndex)
+                                    if (i == front && !state.isMoving) {
+                                        onOpenFolder(i)
+                                    }
+                                }
+                            } else {
+                                null
                             },
                             onRecompose = {
                                 state.totalCardRecomps++
