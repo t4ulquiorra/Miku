@@ -558,7 +558,8 @@ private fun CrateRuler(
 
                 fun jumpAtY(py: Float) {
                     val yDp = py / density
-                    val idx = ((yDp - y0) / step).roundToInt().coerceIn(0, totalFolders - 1)
+                    val idx = (totalFolders - 1 - ((yDp - y0) / step).roundToInt())
+                        .coerceIn(0, totalFolders - 1)
                     onJumpTo(idx)
                 }
 
@@ -590,9 +591,10 @@ private fun CrateRuler(
         for (i in 0 until totalFolders) {
             val isOn = i == activeIndex
             val w = if (isOn) activeW else inactiveW
+            val tickSlot = totalFolders - 1 - i
             drawRoundRect(
                 color = if (isOn) accentColor else inactiveColor,
-                topLeft = Offset(rightEdge - w, y0 + step * i - tickH / 2f),
+                topLeft = Offset(rightEdge - w, y0 + step * tickSlot - tickH / 2f),
                 size = Size(w, tickH),
                 cornerRadius = r,
             )
