@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -418,6 +419,7 @@ fun CrateStack(
                             rotationZ = rzBase * ease
                             transformOrigin = TransformOrigin(0.5f, 0f)
                             alpha = o
+                            compositingStrategy = CompositingStrategy.ModulateAlpha
                             cameraDistance = maxOf(8f, g.perspectiveP * 0.05f) * density
                         }
                         .drawWithContent {
