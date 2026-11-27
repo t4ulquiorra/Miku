@@ -73,7 +73,8 @@ class CrateStackState(initialPos: Float = 0f) {
         internal set
     var worstFrameMs by mutableFloatStateOf(0f)
         internal set
-    internal var isMoving by mutableStateOf(false)
+    var isMoving by mutableStateOf(false)
+        internal set
 
     fun snapTo(newPos: Float, maxIndex: Int) {
         val clamped = newPos.coerceIn(0f, maxIndex.coerceAtLeast(0).toFloat())
