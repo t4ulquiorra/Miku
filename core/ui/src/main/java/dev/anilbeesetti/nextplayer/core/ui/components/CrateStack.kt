@@ -514,18 +514,25 @@ fun CrateStack(
                 }
             }
 
-            // Right-edge ruler over the stack's height (consumes events; never triggers stack drag)
+            // Right-edge ruler sized to the ticks (first to last tick + 10dp above/below), centered in stack area
             if (folders.size >= 2) {
+                val tickPaddingDp = 10f
+                val stepDp = minOf(18f, stackHeightDp / (folders.size - 1))
+                val usedDp = stepDp * (folders.size - 1)
+                val rulerHeightDp = usedDp + tickPaddingDp * 2f
+                val rulerTopDp = stackTopDp + (stackHeightDp - rulerHeightDp) / 2f
                 CrateRuler(
                     totalFolders = folders.size,
                     posProvider = posProvider,
                     maxIndex = maxIndex,
+                    stepDp = stepDp,
+                    tickPaddingDp = tickPaddingDp,
                     showHitAreas = showHitAreas,
                     onJumpTo = { idx -> state.animateTo(idx, maxIndex) },
                     modifier = Modifier
-                        .offset(x = rulerLeftDp.dp, y = stackTopDp.dp)
+                        .offset(x = rulerLeftDp.dp, y = rulerTopDp.dp)
                         .width(rulerWidthDp.dp)
-                        .height(stackHeightDp.dp)
+                        .height(rulerHeightDp.dp)
                         .zIndex(900f),
                 )
             }
@@ -538,6 +545,8 @@ private fun CrateRuler(
     totalFolders: Int,
     posProvider: () -> Float,
     maxIndex: Int,
+    stepDp: Float,
+    tickPaddingDp: Float,
     showHitAreas: Boolean,
     onJumpTo: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -555,15 +564,12 @@ private fun CrateRuler(
                     Modifier
                 },
             )
-            .pointerInput(totalFolders) {
-                val hDp = size.height / density
-                val step = minOf(18f, hDp / (totalFolders - 1))
-                val used = step * (totalFolders - 1)
-                val y0 = (hDp - used) / 2f
+            .pointerInput(totalFolders, stepDp, tickPaddingDp) {
+                val y0 = tickPaddingDp
 
                 fun jumpAtY(py: Float) {
                     val yDp = py / density
-                    val idx = (totalFolders - 1 - ((yDp - y0) / step).roundToInt())
+                    val idx = (totalFolders - 1 - ((yDp - y0) / stepDp).roundToInt())
                         .coerceIn(0, totalFolders - 1)
                     onJumpTo(idx)
                 }
@@ -582,10 +588,8 @@ private fun CrateRuler(
                 }
             },
     ) {
-        val hDp = size.height / density
-        val step = minOf(18f, hDp / (totalFolders - 1)) * density
-        val used = step * (totalFolders - 1)
-        val y0 = (size.height - used) / 2f
+        val step = stepDp * density
+        val y0 = tickPaddingDp * density
         val activeIndex = posProvider().roundToInt().coerceIn(0, maxIndex)
         val tickH = 2.dp.toPx()
         val r = CornerRadius(1.dp.toPx(), 1.dp.toPx())
