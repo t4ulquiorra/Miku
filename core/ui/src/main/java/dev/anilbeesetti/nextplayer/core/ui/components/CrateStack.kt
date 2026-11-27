@@ -228,7 +228,9 @@ fun CrateStack(
     modifier: Modifier = Modifier,
     lastPlayedFolderPath: String? = null,
     showHitAreas: Boolean = false,
+    useUnknownPlaceholders: Boolean = false,
     previewsForFolder: (Folder) -> List<CrateCardVideoPreview> = { emptyList() },
+    thumbnailContent: (@Composable (uriString: String, widthPx: Int, heightPx: Int, modifier: Modifier) -> Unit)? = null,
     onOpenFolder: (Int) -> Unit = {},
     onSolveChanged: ((CrateSolveResult) -> Unit)? = null,
 ) {
@@ -479,7 +481,9 @@ fun CrateStack(
                             },
                             visibleBandHeight = g.riseDp.dp,
                             showHitAreas = showHitAreas,
+                            useUnknownPlaceholders = useUnknownPlaceholders,
                             previewVideos = previewsForFolder(folder),
+                            thumbnailContent = thumbnailContent,
                             onOpenFolder = {
                                 val front = posProvider().roundToInt().coerceIn(0, maxIndex)
                                 if (i == front) {

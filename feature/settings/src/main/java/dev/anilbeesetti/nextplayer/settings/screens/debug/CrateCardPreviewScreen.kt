@@ -31,6 +31,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,8 +44,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import dev.anilbeesetti.nextplayer.core.common.Utils
 import dev.anilbeesetti.nextplayer.core.model.Folder
 import dev.anilbeesetti.nextplayer.core.ui.components.CrateCardVideoPreview
 import dev.anilbeesetti.nextplayer.core.ui.components.CrateFolderCard
@@ -58,6 +66,7 @@ import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeBg
 import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeBorderStrong
 import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeInk
 import dev.anilbeesetti.nextplayer.core.ui.theme.PrototypeInkMuted
+import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -337,17 +346,23 @@ private fun SingleCardDebugPane() {
 }
 
 @Composable
-private fun StackDebugPane() {
+private fun StackDebugPane(
+    viewModel: CrateDebugViewModel = koinViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
     var winW by remember { mutableFloatStateOf(1280f) }
     var winH by remember { mutableFloatStateOf(800f) }
     val stackState = rememberCrateStackState(initialPos = 1f)
     var statusBar by remember { mutableStateOf(false) }
     var controlsExpanded by remember { mutableStateOf(true) }
     var showHitAreas by remember { mutableStateOf(false) }
+    var useRealData by remember { mutableStateOf(false) }
     var lastSolve by remember { mutableStateOf<CrateSolveResult?>(null) }
     var openedFolderName by remember { mutableStateOf<String?>(null) }
 
-    val folders = remember {
+    val fakeFolders = remember {
         STACK_NAMES.mapIndexed { i, name ->
             val c = STACK_COUNTS[i]
             val sec = (c * (1500.0 + debugSeed(i) * 1900.0)).roundToInt()
@@ -360,6 +375,16 @@ private fun StackDebugPane() {
                 videosCount = c,
                 newVideosCount = STACK_NEWS[i],
             )
+        }
+    }
+
+    val activeFolders = if (useRealData) uiState.folders else fakeFolders
+
+    // Load full front video list & front-3 preview thumbnails ONLY when settled (not dragging/flinging)
+    LaunchedEffect(useRealData, stackState.isMoving, stackState.target, activeFolders.size) {
+        if (useRealData && !stackState.isMoving && activeFolders.isNotEmpty()) {
+            val idx = stackState.pos.roundToInt().coerceIn(0, activeFolders.lastIndex)
+            viewModel.onSettledOnFolder(idx)
         }
     }
 
@@ -419,6 +444,20 @@ private fun StackDebugPane() {
                     fontSize = 10.sp,
                     color = PrototypeInkMuted,
                 )
+                if (useRealData) {
+                    val lastVid = uiState.recentlyPlayedVideo
+                    val lastText = if (lastVid != null) {
+                        "${lastVid.displayName} @ ${Utils.formatDurationMillis(lastVid.playbackPosition ?: 0L)}"
+                    } else {
+                        "none"
+                    }
+                    Text(
+                        text = "front videos: ${uiState.settledFrontVideos.size} · last: $lastText",
+                        fontFamily = JetBrainsMono,
+                        fontSize = 10.sp,
+                        color = PrototypeInkMuted,
+                    )
+                }
                 openedFolderName?.let { name ->
                     Text(
                         text = "OPEN: $name",
@@ -428,6 +467,18 @@ private fun StackDebugPane() {
                     )
                 }
             }
+            FilterChip(
+                selected = useRealData,
+                onClick = {
+                    useRealData = !useRealData
+                    val targetList = if (useRealData) uiState.folders else fakeFolders
+                    stackState.snapTo(
+                        newPos = if (targetList.size > 1) 1f else 0f,
+                        maxIndex = (targetList.size - 1).coerceAtLeast(0),
+                    )
+                },
+                label = { Text("Real data", fontSize = 10.sp) },
+            )
             FilterChip(
                 selected = showHitAreas,
                 onClick = { showHitAreas = !showHitAreas },
@@ -490,6 +541,7 @@ private fun StackDebugPane() {
             }
         }
 
+        val maxPosIndex = (activeFolders.size - 1).coerceAtLeast(1)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -502,9 +554,9 @@ private fun StackDebugPane() {
                 color = PrototypeInk,
             )
             Slider(
-                value = stackState.pos.coerceIn(0f, folders.lastIndex.toFloat()),
-                onValueChange = { stackState.snapTo(it, folders.lastIndex) },
-                valueRange = 0f..(folders.lastIndex).toFloat(),
+                value = stackState.pos.coerceIn(0f, maxPosIndex.toFloat()),
+                onValueChange = { stackState.snapTo(it, (activeFolders.size - 1).coerceAtLeast(0)) },
+                valueRange = 0f..maxPosIndex.toFloat(),
                 modifier = Modifier
                     .weight(1f)
                     .height(28.dp),
@@ -569,12 +621,50 @@ private fun StackDebugPane() {
                             .fillMaxWidth(),
                     ) {
                         CrateStack(
-                            folders = folders,
+                            folders = activeFolders,
                             state = stackState,
-                            lastPlayedFolderPath = folders.getOrNull(1)?.path,
+                            lastPlayedFolderPath = if (useRealData) {
+                                uiState.lastPlayedFolderPath
+                            } else {
+                                activeFolders.getOrNull(1)?.path
+                            },
                             showHitAreas = showHitAreas,
+                            useUnknownPlaceholders = useRealData,
+                            previewsForFolder = { f ->
+                                if (useRealData) uiState.previewCache[f.path].orEmpty() else emptyList()
+                            },
+                            thumbnailContent = if (useRealData) {
+                                { uriString, widthPx, heightPx, thumbMod ->
+                                    // Never start a new thumbnail decode while dragging or flinging
+                                    var settledUri by remember { mutableStateOf<String?>(null) }
+                                    LaunchedEffect(uriString, stackState.isMoving) {
+                                        if (!stackState.isMoving) {
+                                            settledUri = uriString
+                                        }
+                                    }
+                                    val activeUri = settledUri
+                                    if (activeUri != null) {
+                                        val req = remember(activeUri, widthPx, heightPx) {
+                                            ImageRequest.Builder(context)
+                                                .data(activeUri)
+                                                .size(widthPx, heightPx)
+                                                .memoryCachePolicy(CachePolicy.ENABLED)
+                                                .diskCachePolicy(CachePolicy.ENABLED)
+                                                .build()
+                                        }
+                                        AsyncImage(
+                                            model = req,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = thumbMod,
+                                        )
+                                    }
+                                }
+                            } else {
+                                null
+                            },
                             onOpenFolder = { idx ->
-                                openedFolderName = folders.getOrNull(idx)?.name
+                                openedFolderName = activeFolders.getOrNull(idx)?.name
                             },
                             onSolveChanged = { lastSolve = it },
                         )

@@ -79,6 +79,7 @@ import kotlin.math.sin
 data class CrateCardVideoPreview(
     val title: String,
     val durationMillis: Long,
+    val uriString: String? = null,
 )
 
 private enum class CardHeightClass {
@@ -180,7 +181,9 @@ fun CrateFolderCard(
     detailVisibleProvider: () -> Boolean = { true },
     visibleBandHeight: Dp? = null,
     showHitAreas: Boolean = false,
+    useUnknownPlaceholders: Boolean = false,
     previewVideos: List<CrateCardVideoPreview> = emptyList(),
+    thumbnailContent: (@Composable (uriString: String, widthPx: Int, heightPx: Int, modifier: Modifier) -> Unit)? = null,
     onOpenFolder: () -> Unit = {},
     onTabClick: (() -> Unit)? = null,
     onBandClick: (() -> Unit)? = null,
@@ -489,11 +492,15 @@ fun CrateFolderCard(
                     Column(modifier = Modifier.fillMaxSize()) {
                         if (heightClass == CardHeightClass.ROOMY && folder.videosCount > 0) {
                             val vListItems = (0 until minOf(folder.videosCount, 9)).map { k ->
-                                previewVideos.getOrNull(k) ?: CrateCardVideoPreview(
-                                    title = "video${k + 1}",
-                                    durationMillis = (folder.totalDuration / folder.videosCount.coerceAtLeast(1))
-                                        .coerceAtLeast(60_000L),
-                                )
+                                previewVideos.getOrNull(k) ?: if (useUnknownPlaceholders) {
+                                    CrateCardVideoPreview(title = "?", durationMillis = -1L)
+                                } else {
+                                    CrateCardVideoPreview(
+                                        title = "video${k + 1}",
+                                        durationMillis = (folder.totalDuration / folder.videosCount.coerceAtLeast(1))
+                                            .coerceAtLeast(60_000L),
+                                    )
+                                }
                             }
                             val vListFontDp = if (wide) {
                                 minOf(cqw(1.5f), cqh(2.6f))
@@ -544,7 +551,9 @@ fun CrateFolderCard(
                             heightClass = heightClass,
                             isVeryNarrow = isVeryNarrow,
                             showHitAreas = showHitAreas,
+                            useUnknownPlaceholders = useUnknownPlaceholders,
                             previewVideos = previewVideos,
+                            thumbnailContent = thumbnailContent,
                             cqw = ::cqw,
                             cqh = ::cqh,
                             toCardSp = { this.toCardSp() },
@@ -684,7 +693,7 @@ private fun VideoListRow(
                 .padding(end = 10.dp),
         )
         Text(
-            text = formatMinutesSeconds(video.durationMillis),
+            text = if (video.durationMillis >= 0L) formatMinutesSeconds(video.durationMillis) else "--:--",
             fontFamily = JetBrainsMono,
             fontSize = fontSize,
             color = PrototypeInkPaper.copy(alpha = 0.78f),
@@ -702,7 +711,9 @@ private fun CardBottomBlock(
     heightClass: CardHeightClass,
     isVeryNarrow: Boolean,
     showHitAreas: Boolean,
+    useUnknownPlaceholders: Boolean,
     previewVideos: List<CrateCardVideoPreview>,
+    thumbnailContent: (@Composable (uriString: String, widthPx: Int, heightPx: Int, modifier: Modifier) -> Unit)?,
     cqw: (Float) -> Dp,
     cqh: (Float) -> Dp,
     toCardSp: Dp.() -> TextUnit,
@@ -770,7 +781,9 @@ private fun CardBottomBlock(
                         folder = folder,
                         folderIndex = folderIndex,
                         wide = true,
+                        useUnknownPlaceholders = useUnknownPlaceholders,
                         previewVideos = previewVideos,
+                        thumbnailContent = thumbnailContent,
                         cqw = cqw,
                         cqh = cqh,
                         toCardSp = toCardSp,
@@ -851,7 +864,9 @@ private fun CardBottomBlock(
                             folder = folder,
                             folderIndex = folderIndex,
                             wide = false,
+                            useUnknownPlaceholders = useUnknownPlaceholders,
                             previewVideos = previewVideos,
+                            thumbnailContent = thumbnailContent,
                             cqw = cqw,
                             cqh = cqh,
                             toCardSp = toCardSp,
@@ -893,7 +908,12 @@ private fun MetaBlock(
     }
     val singleLineMeta = heightClass == CardHeightClass.SHORT || heightClass == CardHeightClass.TINY
     val countLabel = "${folder.videosCount} ${if (folder.videosCount == 1) "VIDEO" else "VIDEOS"}"
-    val metaLine = "$countLabel · ${Utils.formatDurationMillis(folder.totalDuration)}"
+    val durLabel = if (folder.totalDuration > 0L || folder.videosCount == 0) {
+        Utils.formatDurationMillis(folder.totalDuration)
+    } else {
+        "--:--:--"
+    }
+    val metaLine = "$countLabel · $durLabel"
 
     Column {
         Text(
@@ -960,7 +980,9 @@ private fun ThumbsCluster(
     folder: Folder,
     folderIndex: Int,
     wide: Boolean,
+    useUnknownPlaceholders: Boolean,
     previewVideos: List<CrateCardVideoPreview>,
+    thumbnailContent: (@Composable (uriString: String, widthPx: Int, heightPx: Int, modifier: Modifier) -> Unit)?,
     cqw: (Float) -> Dp,
     cqh: (Float) -> Dp,
     toCardSp: Dp.() -> TextUnit,
@@ -969,6 +991,10 @@ private fun ThumbsCluster(
     val clusterH = if (wide) minOf(cqw(9f), cqh(18f)) else minOf(cqw(16f), cqh(25f))
     val thumbFontDp = if (wide) minOf(cqw(1.3f), cqh(2.6f)) else minOf(cqw(3f), cqh(4.6f))
     val tileW = clusterW * (if (wide) 0.42f else 0.49f)
+    val tileH = tileW * (9f / 16f)
+    val density = LocalDensity.current
+    val tileWPx = with(density) { tileW.toPx() }.toInt().coerceAtLeast(1)
+    val tileHPx = with(density) { tileH.toPx() }.toInt().coerceAtLeast(1)
     val tileBrush = remember {
         Brush.linearGradient(colors = listOf(Color(0xFF2C2519), Color(0xFF1B1710)))
     }
@@ -996,13 +1022,22 @@ private fun ThumbsCluster(
                 ThumbSlot.RIGHT -> Alignment.BottomEnd
             }
             val preview = previewVideos.getOrNull(vi)
-            val label = if (preview != null) {
-                "${preview.title} · ${formatMinutesSeconds(preview.durationMillis)}"
-            } else {
-                val avgDur = (folder.totalDuration / folder.videosCount.coerceAtLeast(1))
-                    .coerceAtLeast(60_000L)
-                val dur = (avgDur * (0.7f + prototypeSeed(vi + folderIndex) * 0.6f)).toLong()
-                "video${vi + 1} · ${formatMinutesSeconds(dur)}"
+            val label = when {
+                preview != null -> {
+                    val durText = if (preview.durationMillis >= 0L) {
+                        formatMinutesSeconds(preview.durationMillis)
+                    } else {
+                        "--:--"
+                    }
+                    "${preview.title} · $durText"
+                }
+                useUnknownPlaceholders -> "? · --:--"
+                else -> {
+                    val avgDur = (folder.totalDuration / folder.videosCount.coerceAtLeast(1))
+                        .coerceAtLeast(60_000L)
+                    val dur = (avgDur * (0.7f + prototypeSeed(vi + folderIndex) * 0.6f)).toLong()
+                    "video${vi + 1} · ${formatMinutesSeconds(dur)}"
+                }
             }
 
             Box(
@@ -1018,12 +1053,12 @@ private fun ThumbsCluster(
                         width = 1.dp,
                         color = Color.Black.copy(alpha = 0.30f),
                         shape = RoundedCornerShape(thumbFontDp * 0.4f),
-                    )
-                    .padding(
-                        horizontal = thumbFontDp * 0.45f,
-                        vertical = thumbFontDp * 0.35f,
                     ),
             ) {
+                val uri = preview?.uriString
+                if (uri != null && thumbnailContent != null) {
+                    thumbnailContent(uri, tileWPx, tileHPx, Modifier.fillMaxSize())
+                }
                 // Play dot in center
                 Box(
                     contentAlignment = Alignment.Center,
@@ -1055,7 +1090,11 @@ private fun ThumbsCluster(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .align(Alignment.BottomStart),
+                        .align(Alignment.BottomStart)
+                        .padding(
+                            horizontal = thumbFontDp * 0.45f,
+                            vertical = thumbFontDp * 0.35f,
+                        ),
                 )
             }
         }
