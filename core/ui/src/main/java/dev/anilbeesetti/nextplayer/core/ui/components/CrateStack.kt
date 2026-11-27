@@ -463,8 +463,7 @@ fun CrateStack(
                             cardWidth = cw.dp,
                             cardHeight = ch.dp,
                             tabHeight = g.tabHeightDp.dp,
-                            isLastPlayed = lastPlayedFolderPath == folder.path ||
-                                (lastPlayedFolderPath == null && i == 1),
+                            isLastPlayed = lastPlayedFolderPath != null && lastPlayedFolderPath == folder.path,
                             darkenAlphaProvider = {
                                 val d = i - posProvider()
                                 if (d <= 0.02f) {
